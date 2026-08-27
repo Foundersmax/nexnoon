@@ -1,0 +1,410 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router';
+import { classService } from '@/lib/api';
+import { ENV } from '@/config/env';
+import { classDetailUrl } from '@/lib/url';
+import { 
+  Code, 
+  Palette, 
+  TrendingUp, 
+  Briefcase, 
+  Camera, 
+  Music,
+  Heart,
+  Globe,
+  Filter,
+  SlidersHorizontal,
+  ArrowLeft,
+  BookOpen,
+  MapPin
+} from 'lucide-react';
+import Header from '@/app/components/Header';
+import Footer from '@/app/components/Footer';
+import { Button } from '@/app/components/ui/button';
+import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
+import { getCoursesByCategorySlug, courseToCategoryListItem } from '@/data/courses';
+
+// Category metadata
+const categoryData: Record<string, {
+  name: string;
+  icon: any;
+  description: string;
+  image: string;
+  color: string;
+  totalClasses: string;
+}> = {
+  'development': {
+    name: 'Development',
+    icon: Code,
+    description: 'Master programming, web development, mobile apps, and software engineering with live expert instruction.',
+    image: 'https://images.unsplash.com/photo-1565229284535-2cbbe3049123?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9ncmFtbWluZyUyMGNvZGluZyUyMGRldmVsb3BlcnxlbnwxfHx8fDE3Njg3NDEzMjF8MA&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-blue-500 to-blue-600',
+    totalClasses: '2,500+'
+  },
+  'design': {
+    name: 'Design',
+    icon: Palette,
+    description: 'Learn UI/UX design, graphic design, web design, and creative visual arts from industry professionals.',
+    image: 'https://images.unsplash.com/photo-1624901344246-8759f305fef3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjcmVhdGl2ZSUyMGRlc2lnbiUyMGFydHxlbnwxfHx8fDE3Njg4MDQ3ODR8MA&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-purple-500 to-purple-600',
+    totalClasses: '1,800+'
+  },
+  'marketing': {
+    name: 'Marketing',
+    icon: TrendingUp,
+    description: 'Explore digital marketing, SEO, social media, content strategy, and growth hacking techniques.',
+    image: 'https://images.unsplash.com/photo-1702047094974-a3475a6e37f5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYXJrZXRpbmclMjBkaWdpdGFsJTIwd29ya3NwYWNlfGVufDF8fHx8MTc2ODgwNDc4NHww&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-green-500 to-green-600',
+    totalClasses: '1,200+'
+  },
+  'business': {
+    name: 'Business',
+    icon: Briefcase,
+    description: 'Develop business strategy, entrepreneurship, management, and leadership skills for career growth.',
+    image: 'https://images.unsplash.com/photo-1766867264693-e34f484d3371?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMHByb2Zlc3Npb25hbCUyMHRlYWNoaW5nfGVufDF8fHx8MTc2ODgwNDc4NHww&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-orange-500 to-orange-600',
+    totalClasses: '1,500+'
+  },
+  'photography': {
+    name: 'Photography',
+    icon: Camera,
+    description: 'Master photography techniques, photo editing, videography, and visual storytelling.',
+    image: 'https://images.unsplash.com/photo-1613398773682-9e272a85f203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB0ZWNobm9sb2d5JTIwbGFwdG9wfGVufDF8fHx8MTc2ODgwMDY2Mnww&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-pink-500 to-pink-600',
+    totalClasses: '900+'
+  },
+  'music': {
+    name: 'Music',
+    icon: Music,
+    description: 'Learn music production, instrument mastery, music theory, and audio engineering.',
+    image: 'https://images.unsplash.com/photo-1759984782106-4b56d0aa05b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxvbmxpbmUlMjBsZWFybmluZyUyMHN0dWRlbnR8ZW58MXx8fHwxNzY4ODAyMjUyfDA&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-red-500 to-red-600',
+    totalClasses: '750+'
+  },
+  'health-wellness': {
+    name: 'Health & Wellness',
+    icon: Heart,
+    description: 'Discover fitness, nutrition, yoga, meditation, and holistic wellness practices.',
+    image: 'https://images.unsplash.com/photo-1759984782106-4b56d0aa05b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxvbmxpbmUlMjBsZWFybmluZyUyMHN0dWRlbnR8ZW58MXx8fHwxNzY4ODAyMjUyfDA&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-[#889dd1] to-[#7a8ec2]',
+    totalClasses: '650+'
+  },
+  'languages': {
+    name: 'Languages',
+    icon: Globe,
+    description: 'Learn new languages, improve communication skills, and explore world cultures.',
+    image: 'https://images.unsplash.com/photo-1613398773682-9e272a85f203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB0ZWNobm9sb2d5JTIwbGFwdG9wfGVufDF8fHx8MTc2ODgwMDY2Mnww&ixlib=rb-4.1.0&q=80&w=1080',
+    color: 'from-indigo-500 to-indigo-600',
+    totalClasses: '1,100+'
+  }
+};
+
+export default function CategoryDetail() {
+  const { category } = useParams<{ category: string }>();
+  const navigate = useNavigate();
+  const [sortBy, setSortBy] = useState('popular');
+  const [levelFilter, setLevelFilter] = useState<string[]>([]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 200]);
+  const [showFilters, setShowFilters] = useState(false);
+  const useRealData = !ENV.ENABLE_DEMO_MODE;
+  type ClassItem = { id: string | number; title: string; instructor: string; rating: number; students: number; price: number; duration: string; level: string; thumbnail: string; nextSession: string };
+  const [apiClasses, setApiClasses] = useState<ClassItem[]>([]);
+
+  useEffect(() => {
+    if (!useRealData || !category) return;
+    classService.getClassesByCategory(category, { pageSize: 50 })
+      .then((res) => {
+        const list = (res.data || []).map((c: { id: string; title: string; instructor?: { name?: string }; rating?: number; enrolledStudents?: number; price?: number; duration?: number; level?: string; thumbnail?: string }) => ({
+          id: c.id,
+          title: c.title,
+          instructor: typeof c.instructor === 'object' && c.instructor?.name ? c.instructor.name : 'Instructor',
+          rating: c.rating ?? 0,
+          students: c.enrolledStudents ?? 0,
+          price: c.price ?? 0,
+          duration: c.duration ? `${c.duration} min` : 'N/A',
+          level: c.level ?? 'Beginner',
+          thumbnail: c.thumbnail || 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400',
+          nextSession: 'Check schedule',
+        }));
+        setApiClasses(list);
+      })
+      .catch(() => setApiClasses([]));
+  }, [useRealData, category]);
+
+  const categoryInfo = category ? categoryData[category] : null;
+
+  if (!categoryInfo) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Header variant="light" />
+        <main className="py-20">
+          <div className="w-[90vw] max-w-4xl mx-auto text-center">
+            <h1 className="text-3xl font-bold text-black/90 mb-4">Category Not Found</h1>
+            <p className="text-black/70 mb-8">The category you're looking for doesn't exist.</p>
+            <Button onClick={() => navigate('/categories')} className="bg-[#889dd1] text-white hover:bg-[#7a8ec2]">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Categories
+            </Button>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Apply filters: use API when real mode, else courses.ts dummy data
+  const demoClasses = category ? getCoursesByCategorySlug(category).map(courseToCategoryListItem) : [];
+  let filteredClasses = useRealData ? [...apiClasses] : [...demoClasses];
+
+  // Filter by level
+  if (levelFilter.length > 0) {
+    filteredClasses = filteredClasses.filter(cls => levelFilter.includes(cls.level));
+  }
+
+  // Filter by price range
+  filteredClasses = filteredClasses.filter(cls => cls.price >= priceRange[0] && cls.price <= priceRange[1]);
+
+  // Apply sorting
+  filteredClasses.sort((a, b) => {
+    switch (sortBy) {
+      case 'newest':
+        return b.id - a.id;
+      case 'price-low':
+        return a.price - b.price;
+      case 'price-high':
+        return b.price - a.price;
+      case 'rating':
+        return b.rating - a.rating;
+      case 'popular':
+      default:
+        return b.students - a.students;
+    }
+  });
+
+  const toggleLevelFilter = (level: string) => {
+    setLevelFilter(prev => 
+      prev.includes(level) 
+        ? prev.filter(l => l !== level)
+        : [...prev, level]
+    );
+  };
+
+  const Icon = categoryInfo.icon;
+
+  return (
+    <div className="min-h-screen bg-white">
+      <Header variant="light" />
+      
+      <main>
+        {/* Hero Section */}
+        <section className="relative overflow-hidden bg-gradient-to-br from-black/90 to-black/80 py-20">
+          {/* Background Image */}
+          <div className="absolute inset-0 z-0">
+            <ImageWithFallback
+              src={categoryInfo.image}
+              alt={categoryInfo.name}
+              className="w-full h-full object-cover opacity-20"
+            />
+          </div>
+
+          {/* Content */}
+          <div className="relative z-10 w-[90vw] max-w-6xl mx-auto">
+            <Button
+              onClick={() => navigate('/categories')}
+              variant="outline"
+              className="mb-6 border-white/30 text-white hover:bg-white/10"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Categories
+            </Button>
+
+            <div className="flex items-start gap-6">
+              <div className={`hidden md:flex p-6 rounded-2xl bg-gradient-to-br ${categoryInfo.color} shadow-xl`}>
+                <Icon className="h-16 w-16 text-white" />
+              </div>
+              
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-4 md:hidden">
+                  <div className={`p-3 rounded-xl bg-gradient-to-br ${categoryInfo.color}`}>
+                    <Icon className="h-8 w-8 text-white" />
+                  </div>
+                  <h1 className="text-3xl sm:text-4xl font-bold text-white">
+                    {categoryInfo.name}
+                  </h1>
+                </div>
+
+                <h1 className="hidden md:block text-4xl lg:text-5xl font-bold text-white mb-4">
+                  {categoryInfo.name}
+                </h1>
+                
+                <p className="text-lg text-white/90 mb-6 max-w-3xl">
+                  {categoryInfo.description}
+                </p>
+                
+                <div className="flex flex-wrap items-center gap-6 text-white/80">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-5 w-5" />
+                    <span className="font-medium">{categoryInfo.totalClasses} Live Classes</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">All Skill Levels</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Filters and Classes */}
+        <section className="py-12">
+          <div className="w-[90vw] max-w-6xl mx-auto">
+            {/* Filters Bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-black/90 mb-1">
+                  Available Classes
+                </h2>
+                <p className="text-black/70">
+                  {filteredClasses.length} live classes found
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="border-black/20 text-black/80"
+                  onClick={() => setShowFilters(!showFilters)}
+                >
+                  <SlidersHorizontal className="h-4 w-4 mr-2" />
+                  Filters
+                </Button>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="px-4 py-2 border border-black/20 rounded-lg text-black/80 bg-white hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-[#889dd1]"
+                >
+                  <option value="popular">Most Popular</option>
+                  <option value="newest">Newest First</option>
+                  <option value="price-low">Price: Low to High</option>
+                  <option value="price-high">Price: High to Low</option>
+                  <option value="rating">Highest Rated</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Filters Panel */}
+            {showFilters && (
+              <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                <h3 className="text-xl font-bold mb-2">Skill Level</h3>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="outline"
+                    className={`border-black/20 text-black/80 ${levelFilter.includes('Beginner') ? 'bg-[#889dd1] text-white' : ''}`}
+                    onClick={() => toggleLevelFilter('Beginner')}
+                  >
+                    Beginner
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className={`border-black/20 text-black/80 ${levelFilter.includes('Intermediate') ? 'bg-[#889dd1] text-white' : ''}`}
+                    onClick={() => toggleLevelFilter('Intermediate')}
+                  >
+                    Intermediate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className={`border-black/20 text-black/80 ${levelFilter.includes('Advanced') ? 'bg-[#889dd1] text-white' : ''}`}
+                    onClick={() => toggleLevelFilter('Advanced')}
+                  >
+                    Advanced
+                  </Button>
+                </div>
+
+                <h3 className="text-xl font-bold mt-4 mb-2">Price Range</h3>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    value={priceRange[0]}
+                    onChange={(e) => setPriceRange([parseInt(e.target.value), priceRange[1]])}
+                    className="px-4 py-2 border border-black/20 rounded-lg text-black/80 bg-white hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-[#889dd1]"
+                    min="0"
+                  />
+                  <span className="text-black/80">to</span>
+                  <input
+                    type="number"
+                    value={priceRange[1]}
+                    onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}
+                    className="px-4 py-2 border border-black/20 rounded-lg text-black/80 bg-white hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-[#889dd1]"
+                    min="0"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Classes Grid - Matching Homepage Style */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 justify-items-center">
+              {filteredClasses.map((classItem) => (
+                <div
+                  key={classItem.id}
+                  onClick={() => navigate(classDetailUrl(String(classItem.id), classItem.title))}
+                  className="group rounded-2xl overflow-hidden cursor-pointer w-full max-w-[320px]"
+                >
+                  {/* Image */}
+                  <div className="relative h-56 overflow-hidden bg-gray-100 rounded-2xl">
+                    <ImageWithFallback
+                      src={classItem.thumbnail}
+                      alt={classItem.title}
+                      className="w-full h-full object-cover"
+                    />
+
+                    {/* Live Class badge + wishlist — aligned row */}
+                    <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
+                      <span className="px-2.5 py-1.5 rounded-full bg-white/40 text-gray-800 text-[11px] font-semibold tracking-wide backdrop-blur-sm">
+                        Live Class
+                      </span>
+                      <button 
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-2 rounded-full bg-white/40 backdrop-blur-sm hover:bg-white/60 transition-colors"
+                      >
+                        <Heart className="h-5 w-5 text-gray-700 hover:text-red-500 hover:fill-red-500 transition-colors" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-[10px] px-[0px] py-[5px]">
+                    <h3 className="font-semibold text-base text-gray-900 mb-1 line-clamp-1">
+                      {classItem.title}
+                    </h3>
+
+                    <div className="flex items-center justify-between gap-2 text-sm text-gray-600 m-[0px] -mt-1 mx-[0px] my-[5px]">
+                      <div className="flex items-center min-w-0">
+                        <MapPin className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                        <span className="text-[12px] truncate">Online, Live</span>
+                      </div>
+                      <span className="text-[12px] text-gray-500 flex-shrink-0">
+                        {classItem.duration || '4 weeks'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xl font-semibold text-gray-900 text-[15px]">€{classItem.price.toFixed(2)}</p>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <Heart className="h-4 w-4 mr-1" />
+                        <span>(0)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+      
+      <Footer />
+    </div>
+  );
+}
