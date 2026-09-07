@@ -344,12 +344,12 @@ export default function CategoryDetail() {
             )}
 
             {/* Classes Grid - Matching Homepage Style */}
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-x-3 gap-y-5 sm:gap-x-4 sm:gap-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 max-w-[1328px] mx-auto justify-items-center">
               {filteredClasses.map((classItem) => (
                 <div
                   key={classItem.id}
                   onClick={() => navigate(classDetailUrl(String(classItem.id), classItem.title))}
-                  className="group rounded-2xl overflow-hidden cursor-pointer w-full min-w-0"
+                  className="group rounded-2xl overflow-hidden cursor-pointer w-full min-w-0 max-w-[320px]"
                 >
                   {/* Image */}
                   <div className="relative h-56 overflow-hidden bg-gray-100 rounded-2xl">

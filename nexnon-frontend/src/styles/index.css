@@ -37,3 +37,15 @@ label:has(input:disabled),
 input[type='file']:disabled::file-selector-button {
   cursor: not-allowed;
 }
+
+/* Keep shared page footers at the viewport bottom without covering content. */
+#root { min-height: 100vh; min-height: 100dvh; }
+:where(div):has(> .site-footer) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+:where(div):has(> .site-footer) > * { flex-shrink: 0; }
+:where(div):has(> .site-footer) > main { flex-grow: 1; }
+.site-footer { margin-top: auto; width: 100%; }
