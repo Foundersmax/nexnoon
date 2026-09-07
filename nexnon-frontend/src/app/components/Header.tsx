@@ -1,3 +1,4 @@
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetClose } from '@/app/components/ui/sheet';
 import { useBackendData } from '@/hooks/useBackendData';
 import { Search, Menu, User, LogOut, Bell, HelpCircle, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
@@ -12,6 +13,7 @@ interface HeaderProps {
 
 export default function Header({ variant = "light" }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
@@ -27,7 +29,15 @@ export default function Header({ variant = "light" }: HeaderProps) {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 768px)');
+    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false); };
+    desktop.addEventListener('change', closeOnDesktop);
+    return () => desktop.removeEventListener('change', closeOnDesktop);
+  }, []);
+
   const handleLogout = () => {
+    setMobileOpen(false);
     logout();
     setShowUserMenu(false);
     navigate('/');
@@ -171,9 +181,31 @@ export default function Header({ variant = "light" }: HeaderProps) {
               </>
             )}
             
-            <Button variant="ghost" size="icon" className={`md:hidden ${showWhiteBg ? "hover:bg-black/5" : "hover:bg-white/10"}`}>
-              <Menu className={`h-5 w-5 ${showWhiteBg ? "text-black" : "text-white"}`} />
-            </Button>
+            <Sheet open={mobileOpen} onOpenChange={open => { setMobileOpen(open); if (open) setShowUserMenu(false); }}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="ghost" size="icon" aria-label="Open navigation menu" className={`md:hidden ${showWhiteBg ? "hover:bg-black/5" : "hover:bg-white/10"}`}>
+                  <Menu className={`h-5 w-5 ${showWhiteBg ? "text-black" : "text-white"}`} />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[min(90vw,360px)] overflow-y-auto bg-white text-black">
+                <SheetHeader className="border-b p-6">
+                  <SheetTitle className="text-2xl font-bold">Nexnoon</SheetTitle>
+                  <SheetDescription>Find your next class and manage your learning.</SheetDescription>
+                </SheetHeader>
+                <form className="px-6 flex gap-2" onSubmit={e => { e.preventDefault(); if (searchQuery.trim()) { setMobileOpen(false); navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`); } }}>
+                  <Input aria-label="Search classes" placeholder="Search classes" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                  <Button type="submit" size="icon" aria-label="Search"><Search className="h-4 w-4" /></Button>
+                </form>
+                <nav aria-label="Mobile navigation" className="px-4 pb-6 space-y-1">
+                  {[
+                    ['/', 'Home'], ['/browse', 'Browse'], ['/categories', 'Categories'], ['/teach', 'Teach'],
+                    ...(isAuthenticated ? [['/my-classes', 'My Classes'], ...(user?.role === 'instructor' ? [['/instructor/dashboard', 'Teacher Dashboard']] : []), ['/notifications', 'Notifications'], ['/profile', 'Profile'], ['/settings', 'Settings']] : [['/login', 'Log In'], ['/signup', 'Sign Up']]),
+                    ['/help', 'Help'],
+                  ].map(([to, label]) => <SheetClose asChild key={to}><Link to={to} className="block rounded-xl px-4 py-3 font-medium hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-black">{label}</Link></SheetClose>)}
+                  {isAuthenticated && <button type="button" onClick={handleLogout} className="w-full text-left rounded-xl px-4 py-3 font-medium text-red-600 hover:bg-red-50">Log Out</button>}
+                </nav>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </div>
