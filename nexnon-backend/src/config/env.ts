@@ -6,6 +6,7 @@ export const ENV = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: Number(process.env.PORT) || 4000,
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/nexnon',
+  MONGODB_DNS_SERVERS: process.env.MONGODB_DNS_SERVERS || '',
 
   // JWT
   JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET || 'change-me-access',

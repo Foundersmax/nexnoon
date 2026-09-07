@@ -1,3 +1,4 @@
+import { authService, getErrorMessage } from '@/lib/api';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
@@ -7,6 +8,7 @@ import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 
 export default function ForgotPassword() {
+  const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -15,11 +17,11 @@ export default function ForgotPassword() {
     e.preventDefault();
     setIsLoading(true);
 
-    // TODO: Implement password reset API call
-    setTimeout(() => {
-      setIsLoading(false);
-      setIsSubmitted(true);
-    }, 1500);
+    setError('');
+    try { await authService.requestPasswordReset({ email }); setIsSubmitted(true); }
+    catch (err) { setError(getErrorMessage(err)); }
+    finally { setIsLoading(false); }
+
   };
 
   return (
@@ -28,6 +30,7 @@ export default function ForgotPassword() {
       
       <main className="py-12">
         <div className="w-[90vw] max-w-md mx-auto">
+          {error && <p role="alert" className="text-red-600 mb-4">{error}</p>}
           <Link
             to="/login"
             className="flex items-center text-gray-600 hover:text-black mb-8 transition-colors"

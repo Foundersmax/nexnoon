@@ -1,3 +1,4 @@
+import BrandLoader from '@/app/components/BrandLoader';
 import { useState, useEffect } from 'react';
 import { Play, Clock, CheckCircle, Calendar, Users, TrendingUp, Edit } from 'lucide-react';
 import { useNavigate } from 'react-router';
@@ -24,7 +25,7 @@ type TeachingCard = {
   id: string | number;
   title: string;
   students: number;
-  revenue: number;
+  revenue: string;
   nextSession: string;
   thumbnail: string;
   status: string;
@@ -48,32 +49,9 @@ type UpcomingCard = {
   thumbnail: string;
 };
 
-const DEMO_ENROLLED: EnrolledCard[] = [
-  { id: 1, title: 'Advanced React Patterns & Best Practices', instructor: 'Sarah Johnson', progress: 65, nextSession: 'Jan 25, 2026 - 2:00 PM EST', thumbnail: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400' },
-  { id: 2, title: 'UI/UX Design Fundamentals', instructor: 'Michael Chen', progress: 40, nextSession: 'Jan 26, 2026 - 4:00 PM EST', thumbnail: 'https://images.unsplash.com/photo-1572044162444-ad60f128bdea?w=400' },
-];
-
-const DEMO_TEACHING: TeachingCard[] = [
-  { id: 1, title: 'Advanced React Patterns & Best Practices', students: 156, revenue: 4200, nextSession: 'Jan 25, 2026 - 2:00 PM EST', thumbnail: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400', status: 'active' },
-  { id: 2, title: 'UI/UX Design Fundamentals', students: 98, revenue: 2450, nextSession: 'Jan 26, 2026 - 4:00 PM EST', thumbnail: 'https://images.unsplash.com/photo-1572044162444-ad60f128bdea?w=400', status: 'active' },
-  { id: 3, title: 'Digital Marketing Strategy 2026', students: 88, revenue: 1850, nextSession: 'Jan 28, 2026 - 3:00 PM EST', thumbnail: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400', status: 'active' },
-];
-
-const DEMO_COMPLETED: CompletedCard[] = [
-  { id: 5, title: 'Photography Masterclass', instructor: 'Lisa Anderson', completedDate: 'Jan 15, 2026', certificate: true, thumbnail: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=400' },
-];
-
-const DEMO_UPCOMING: UpcomingCard[] = [
-  { id: 3, title: 'Digital Marketing Strategy 2026', instructor: 'Emma Williams', startDate: 'Feb 1, 2026', startTime: '1:00 PM EST', thumbnail: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400' },
-];
-
-function formatNextSession(c: Class): string {
-  if (c.schedule?.length) {
-    const next = c.schedule.find((s) => s.status === 'scheduled' && new Date(s.startTime) > new Date());
-    if (next) return new Date(next.startTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  }
-  if (c.startDate) return new Date(c.startDate).toLocaleDateString(undefined, { dateStyle: 'medium' });
-  return '—';
+function formatNextSession(c: Class) {
+  const session = c.schedule?.find(s => new Date(s.endTime).getTime() > Date.now() && s.status !== 'cancelled');
+  return session ? new Date(session.startTime).toLocaleString() : c.startDate ? new Date(c.startDate).toLocaleString() : 'Not scheduled';
 }
 
 export default function MyClasses() {
@@ -90,7 +68,7 @@ export default function MyClasses() {
   const useRealData = !ENV.ENABLE_DEMO_MODE && isAuthenticated;
 
   useEffect(() => {
-    if (!useRealData) return;
+    if (!useRealData) { setEnrolledClasses([]); setTeachingClasses([]); setCompletedClasses([]); setUpcomingClasses([]); return; }
 
     setLoading(true);
     if (isInstructor) {
@@ -101,7 +79,7 @@ export default function MyClasses() {
             id: c.id,
             title: c.title,
             students: c.enrolledStudents ?? 0,
-            revenue: 0,
+            revenue: 'See earnings',
             nextSession: formatNextSession(c),
             thumbnail: c.thumbnail || 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400',
             status: c.status || 'active',
@@ -187,12 +165,12 @@ export default function MyClasses() {
         })
         .finally(() => setLoading(false));
     }
-  }, [useRealData, isInstructor]);
+  }, [useRealData, isInstructor, user?.id]);
 
-  const displayEnrolled = useRealData ? enrolledClasses : DEMO_ENROLLED;
-  const displayTeaching = useRealData ? teachingClasses : DEMO_TEACHING;
-  const displayCompleted = useRealData ? completedClasses : DEMO_COMPLETED;
-  const displayUpcoming = useRealData ? upcomingClasses : DEMO_UPCOMING;
+  const displayEnrolled = enrolledClasses;
+  const displayTeaching = teachingClasses;
+  const displayCompleted = completedClasses;
+  const displayUpcoming = upcomingClasses;
 
   return (
     <div className="min-h-screen bg-white">
@@ -212,7 +190,7 @@ export default function MyClasses() {
             {!useRealData && (
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  <strong>Demo Mode:</strong> You're viewing sample data. Sign in to see your actual classes.
+                  Sign in to see your classes.
                 </p>
               </div>
             )}
@@ -255,7 +233,7 @@ export default function MyClasses() {
           </div>
 
           {loading ? (
-            <div className="py-12 text-center text-gray-600">Loading your classes...</div>
+            <BrandLoader />
           ) : (
           <>
           {/* Enrolled Classes */}
@@ -320,7 +298,7 @@ export default function MyClasses() {
                             <div className="text-xs">Students</div>
                           </div>
                           <div className="bg-gray-100 border border-gray-300 p-2 text-center rounded-lg">
-                            <div className="text-lg font-bold text-black">${(cls as any).revenue}</div>
+                            <div className="text-lg font-bold text-black">{(cls as any).revenue}</div>
                             <div className="text-xs text-black">Revenue</div>
                           </div>
                         </div>

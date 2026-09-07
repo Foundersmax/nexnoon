@@ -1,3 +1,16 @@
+export interface ClassDetails {
+  overview?: string;
+  instructorTitle?: string;
+  instructorBio?: string;
+  instructorImage?: string;
+  previewVideoUrl?: string;
+  curriculumIntro?: string;
+  certificateInfo?: string;
+  outcomes?: string[];
+  curriculum?: { title: string; topics: string[]; project: string }[];
+  faqs?: { question: string; answer: string }[];
+}
+
 // Core API Types
 
 export interface APIResponse<T> {
@@ -78,6 +91,13 @@ export interface PasswordResetConfirm {
 
 // Class/Course Types
 export interface Class {
+  details?: ClassDetails;
+  language?: string;
+  maxStudents?: number;
+  learningOutcomes?: string[];
+  prerequisites?: string[];
+  materials?: string[];
+  assignments?: { title: string; description?: string; dueDate?: string }[];
   id: string;
   title: string;
   description: string;
@@ -123,6 +143,14 @@ export interface ClassSchedule {
 }
 
 export interface CreateClassRequest {
+  details?: ClassDetails;
+  thumbnail?: string;
+  language?: string;
+  maxStudents?: number;
+  learningOutcomes?: string[];
+  prerequisites?: string[];
+  materials?: string[];
+  status?: 'draft' | 'published' | 'archived';
   title: string;
   description: string;
   category: string;
@@ -131,7 +159,7 @@ export interface CreateClassRequest {
   duration: number;
   totalSessions: number;
   startDate?: string;
-  schedule?: Omit<ClassSchedule, 'id' | 'classId'>[];
+  schedule?: (Omit<ClassSchedule, 'id' | 'classId' | 'status'> & { status?: ClassSchedule['status'] })[];
 }
 
 export interface UpdateClassRequest extends Partial<CreateClassRequest> {
@@ -276,18 +304,6 @@ export interface CreateReviewRequest {
   classId: string;
   rating: number;
   comment?: string;
-}
-
-// Notification Types
-export interface Notification {
-  id: string;
-  userId: string;
-  type: 'class_update' | 'assignment' | 'payment' | 'system' | 'message';
-  title: string;
-  message: string;
-  isRead: boolean;
-  link?: string;
-  createdAt: string;
 }
 
 export interface MarkNotificationReadRequest {

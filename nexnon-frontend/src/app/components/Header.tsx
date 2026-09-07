@@ -1,3 +1,4 @@
+import { useBackendData } from '@/hooks/useBackendData';
 import { Search, Menu, User, LogOut, Bell, HelpCircle, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -9,11 +10,13 @@ interface HeaderProps {
   variant?: "default" | "light";
 }
 
-export default function Header({ variant = "default" }: HeaderProps) {
+export default function Header({ variant = "light" }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
+  const unread = useBackendData<{ pagination: { totalItems: number } }>('/notifications?unread=true&pageSize=1');
 
   useEffect(() => {
     const handleScroll = () => {
@@ -54,15 +57,17 @@ export default function Header({ variant = "default" }: HeaderProps) {
           {/* Search Bar */}
           {showWhiteBg && (
             <div className="hidden md:flex flex-1 max-w-md mx-4">
-              <div className="relative w-full">
+              <form className="relative w-full" onSubmit={e => { e.preventDefault(); if (searchQuery.trim()) navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`); }}>
                 <Input
                   type="text"
                   placeholder="What do you want to learn?"
-                  onFocus={() => navigate('/browse')}
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  aria-label="Search classes"
                   className="w-full pl-4 pr-11 py-3.5 text-sm rounded-full border border-gray-200 focus-visible:border-black focus-visible:ring-0 focus-visible:outline-none transition-colors bg-white text-black h-auto cursor-pointer"
                 />
-                <Search className="absolute right-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-black z-10" />
-              </div>
+                <button type="submit" aria-label="Search" className="absolute right-4 top-1/2 -translate-y-1/2"><Search className="h-4 w-4 text-black" /></button>
+              </form>
             </div>
           )}
 
@@ -94,7 +99,7 @@ export default function Header({ variant = "default" }: HeaderProps) {
                 <Link to="/notifications">
                   <Button variant="ghost" size="icon" className={`hidden sm:flex ${showWhiteBg ? "text-gray-600 hover:bg-gray-100" : "text-white hover:bg-white/10"} relative`}>
                     <Bell className="h-5 w-5" />
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+                    {(unread.data?.pagination.totalItems || 0) > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" aria-label="Unread notifications" />}
                   </Button>
                 </Link>
 

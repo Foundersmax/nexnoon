@@ -1,0 +1,9 @@
+.brand-loader { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+.brand-loader--screen { min-height: 100vh; min-height: 100dvh; background: #fff; }
+.brand-loader__mark { font-size: clamp(36px, 6vw, 56px); font-weight: 750; letter-spacing: -0.06em; line-height: 1.2; color: #26334f; animation: nexnoon-breathe 2.4s ease-in-out infinite; }
+.brand-loader__dot { color: #889dd1; }
+.brand-loader__track { width: 112px; height: 3px; border-radius: 99px; overflow: hidden; background: #e9edf7; }
+.brand-loader__track span { display: block; height: 100%; width: 45%; border-radius: inherit; background: linear-gradient(90deg, #889dd1, #475f99); animation: nexnoon-progress 1.6s ease-in-out infinite; }
+@keyframes nexnoon-progress { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
+@keyframes nexnoon-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .brand-loader__mark, .brand-loader__track span { animation: none; } .brand-loader__track span { width: 100%; } }

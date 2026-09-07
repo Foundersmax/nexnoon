@@ -10,6 +10,8 @@ import classRoutes from './routes/class.routes';
 import enrollmentRoutes from './routes/enrollment.routes';
 import notificationRoutes from './routes/notification.routes';
 import reviewRoutes from './routes/review.routes';
+import dataRoutes from './routes/data.routes';
+import mongoose from 'mongoose';
 
 const app = express();
 
@@ -22,12 +24,13 @@ app.use(
   })
 );
 app.use(helmet());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
 // Health check (no /v1 prefix for load balancers)
 app.get('/health', (_req, res) => {
-  res.json({ success: true, data: { status: 'ok' } });
+  const connected = mongoose.connection.readyState === 1;
+  res.status(connected ? 200 : 503).json({ success: connected, data: { status: connected ? 'ok' : 'database unavailable' } });
 });
 
 // API v1 (versioned for production)
@@ -36,6 +39,7 @@ app.use('/v1/classes', classRoutes);
 app.use('/v1/enrollments', enrollmentRoutes);
 app.use('/v1/notifications', notificationRoutes);
 app.use('/v1/reviews', reviewRoutes);
+app.use('/v1/data', dataRoutes);
 
 app.use(errorHandler);
 

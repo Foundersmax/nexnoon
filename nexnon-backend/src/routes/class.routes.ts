@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { isValidObjectId } from 'mongoose';
+import { User } from '../models/User';
 import { z } from 'zod';
 import { ClassModel, ClassScheduleModel } from '../models/Class';
 import { EnrollmentModel } from '../models/Enrollment';
@@ -7,6 +9,10 @@ import { requireAuth, requireRole, AuthRequest } from '../middleware/auth';
 import { createZoomMeeting } from '../utils/zoom';
 
 const router = Router();
+router.use((req: AuthRequest, res, next) => {
+  if (req.headers.authorization) return requireAuth(req, res, next);
+  next();
+});
 
 /** Ensure API responses use `id` (frontend expects it); Mongoose returns `_id`. */
 function normalizeClass(doc: any): any {
@@ -27,11 +33,27 @@ const listParamsSchema = z.object({
 });
 
 const createClassSchema = z.object({
+  details: z.object({
+    overview: z.string().max(30000).optional(), instructorTitle: z.string().max(200).optional(),
+    instructorBio: z.string().max(10000).optional(), instructorImage: z.string().max(4000000).optional(),
+    previewVideoUrl: z.union([z.literal(''), z.string().url().startsWith('https://')]).optional(),
+    curriculumIntro: z.string().max(2000).optional(), certificateInfo: z.string().max(5000).optional(),
+    outcomes: z.array(z.string().max(2000)).max(100).optional(),
+    curriculum: z.array(z.object({ title: z.string().max(500), topics: z.array(z.string().max(2000)).max(100), project: z.string().max(5000) })).max(100).optional(),
+    faqs: z.array(z.object({ question: z.string().max(1000), answer: z.string().max(5000) })).max(100).optional(),
+  }).optional(),
   title: z.string(),
   description: z.string(),
   category: z.string(),
   level: z.enum(['Beginner', 'Intermediate', 'Advanced']),
-  price: z.number(),
+  price: z.number().min(0),
+  thumbnail: z.string().max(4000000).optional(),
+  language: z.string().optional(),
+  maxStudents: z.number().int().positive().optional(),
+  learningOutcomes: z.array(z.string()).optional(),
+  prerequisites: z.array(z.string()).optional(),
+  materials: z.array(z.string()).optional(),
+  status: z.enum(['draft', 'published', 'archived']).optional(),
   duration: z.number(),
   totalSessions: z.number(),
   startDate: z.string().datetime().optional(),
@@ -55,7 +77,7 @@ router.get('/', async (req, res) => {
   }
   const { page = 1, pageSize = 10, search } = parsed.data;
 
-  const query: any = {};
+  const query: any = { status: 'published' };
   if (search) {
     query.title = { $regex: search, $options: 'i' };
   }
@@ -94,7 +116,7 @@ router.get('/search', async (req, res) => {
   }
   const { page = 1, pageSize = 10 } = parsed.data;
 
-  const query: any = {};
+  const query: any = { status: 'published' };
   if (q) {
     query.title = { $regex: q, $options: 'i' };
   }
@@ -132,7 +154,9 @@ router.get('/category/:category', async (req, res) => {
   }
   const { page = 1, pageSize = 10 } = parsed.data;
 
-  const query: any = { category: req.params.category };
+  const categoryNames: Record<string, string[]> = { 'health-wellness': ['Health & Wellness', 'Health & Fitness'], languages: ['Languages', 'Language', 'Language Learning'] };
+  const names = categoryNames[req.params.category.toLowerCase()] || [req.params.category.replace(/-/g, ' ')];
+  const query: any = { status: 'published', category: { $in: names.map(name => new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i')) } };
 
   const [items, totalItems] = await Promise.all([
     ClassModel.find(query)
@@ -147,7 +171,7 @@ router.get('/category/:category', async (req, res) => {
   return res.json({
     success: true,
     data: {
-      data: items,
+      data: items.map(normalizeClass),
       pagination: {
         page,
         pageSize,
@@ -160,7 +184,7 @@ router.get('/category/:category', async (req, res) => {
   });
 });
 
-router.get('/my', requireAuth, requireRole('instructor'), async (req: AuthRequest, res) => {
+router.get('/my', requireAuth, requireRole('instructor', 'admin'), async (req: AuthRequest, res) => {
   const parsed = listParamsSchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ success: false, message: 'Invalid query params' });
@@ -204,18 +228,19 @@ function normalizeSchedule(doc: any): any {
   return { ...rest, id: id || _id };
 }
 
-router.get('/:id', async (req, res) => {
-  if (!req.params.id || req.params.id === 'undefined') {
+router.get('/:id', async (req: AuthRequest, res) => {
+  if (!isValidObjectId(req.params.id)) {
     return res.status(400).json({ success: false, message: 'Invalid class id' });
   }
   const cls = await ClassModel.findById(req.params.id);
   if (!cls) {
     return res.status(404).json({ success: false, message: 'Class not found' });
   }
+  if (cls.status !== 'published' && req.user?.role !== 'admin' && String(cls.instructor.id) !== req.user?.id) return res.status(404).json({ success: false, message: 'Class not found' });
   const sessions = await ClassScheduleModel.find({ classId: cls.id })
     .sort({ sessionNumber: 1 })
     .lean();
-  const schedule = sessions.map((s: any) => normalizeSchedule(s));
+  const schedule = sessions.map((s: any) => { const { zoomLink, zoomMeetingId, zoomPasscode, recordingUrl, ...publicSession } = normalizeSchedule(s); return publicSession; });
   const data = { ...normalizeClass(cls), schedule };
   return res.json({ success: true, data });
 });
@@ -231,15 +256,18 @@ router.post('/', requireAuth, requireRole('instructor', 'admin'), async (req: Au
   }
 
   const data = parsed.data;
+  const instructor = await User.findById(req.user!.id);
+  if (!instructor) return res.status(401).json({ success: false, message: 'Account not found' });
 
   const cls = await ClassModel.create({
     ...data,
     currency: 'USD',
     instructor: {
       id: req.user!.id,
-      name: 'Instructor', // In production, resolve from user profile
+      name: instructor.fullName,
+      avatar: instructor.avatar,
     },
-    status: 'draft',
+    status: data.status || 'published',
   });
 
   if (data.schedule?.length) {
@@ -271,23 +299,40 @@ router.post('/', requireAuth, requireRole('instructor', 'admin'), async (req: Au
 
   return res.status(201).json({
     success: true,
-    data: cls,
+    data: normalizeClass(cls),
     message: 'Class created successfully',
   });
 });
 
-router.patch('/:id', requireAuth, requireRole('instructor', 'admin'), async (req, res) => {
+router.use('/:id', async (req: AuthRequest, res, next) => {
+  if (req.method === 'GET') return next();
+  return requireAuth(req, res, async () => {
+    if (!isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid class ID' });
+    try {
+      const cls = await ClassModel.findById(req.params.id);
+      if (!cls) return res.status(404).json({ success: false, message: 'Class not found' });
+      if (req.user!.role !== 'admin' && String(cls.instructor.id) !== req.user!.id) {
+        return res.status(403).json({ success: false, message: 'You can only change your own classes' });
+      }
+      next();
+    } catch (error) { next(error); }
+  });
+});
+
+router.patch('/:id', requireAuth, requireRole('instructor', 'admin'), async (req: AuthRequest, res) => {
   const cls = await ClassModel.findById(req.params.id);
   if (!cls) {
     return res.status(404).json({ success: false, message: 'Class not found' });
   }
 
-  Object.assign(cls, req.body);
+  const parsed = createClassSchema.partial().omit({ schedule: true }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, message: 'Invalid class changes' });
+  Object.assign(cls, parsed.data);
   await cls.save();
 
   return res.json({
     success: true,
-    data: cls,
+    data: normalizeClass(cls),
     message: 'Class updated successfully',
   });
 });
@@ -328,7 +373,7 @@ router.get('/:id/schedule', async (req, res) => {
   const sessions = await ClassScheduleModel.find({ classId: req.params.id }).sort({
     sessionNumber: 1,
   });
-  return res.json({ success: true, data: sessions });
+  return res.json({ success: true, data: sessions.map(s => { const { zoomLink, zoomMeetingId, zoomPasscode, recordingUrl, ...publicSession } = normalizeSchedule(s); return publicSession; }) });
 });
 
 router.post('/:id/schedule', requireAuth, requireRole('instructor'), async (req, res) => {
@@ -368,7 +413,7 @@ router.post('/:id/schedule', requireAuth, requireRole('instructor'), async (req,
 });
 
 router.patch('/:id/schedule/:sessionId', requireAuth, requireRole('instructor'), async (req, res) => {
-  const session = await ClassScheduleModel.findById(req.params.sessionId);
+  const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.id });
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
@@ -380,7 +425,7 @@ router.patch('/:id/schedule/:sessionId', requireAuth, requireRole('instructor'),
 });
 
 router.delete('/:id/schedule/:sessionId', requireAuth, requireRole('instructor'), async (req, res) => {
-  const session = await ClassScheduleModel.findById(req.params.sessionId);
+  const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.id });
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
@@ -388,7 +433,9 @@ router.delete('/:id/schedule/:sessionId', requireAuth, requireRole('instructor')
   return res.json({ success: true, data: null });
 });
 
-router.get('/:id/enrollments', requireAuth, requireRole('instructor'), async (req, res) => {
+router.get('/:id/enrollments', requireAuth, requireRole('instructor', 'admin'), async (req: AuthRequest, res) => {
+  const cls = await ClassModel.findById(req.params.id);
+  if (!cls || (req.user!.role !== 'admin' && String(cls.instructor.id) !== req.user!.id)) return res.status(403).json({ success: false, message: 'Forbidden' });
   const parsed = listParamsSchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ success: false, message: 'Invalid query params' });
@@ -409,7 +456,7 @@ router.get('/:id/enrollments', requireAuth, requireRole('instructor'), async (re
   return res.json({
     success: true,
     data: {
-      data: items,
+      data: items.map(normalizeClass),
       pagination: {
         page,
         pageSize,
@@ -443,7 +490,7 @@ router.get('/:id/reviews', async (req, res) => {
   return res.json({
     success: true,
     data: {
-      data: items,
+      data: items.map(normalizeClass),
       pagination: {
         page,
         pageSize,

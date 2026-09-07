@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { isValidObjectId } from "mongoose";
 import { z } from "zod";
 import { EnrollmentModel } from "../models/Enrollment";
 import { ClassModel } from "../models/Class";
@@ -11,7 +12,7 @@ import { ENV } from "../config/env";
 const router = Router();
 
 const stripe = ENV.STRIPE_SECRET_KEY
-  ? new Stripe(ENV.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18" })
+  ? new Stripe(ENV.STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" })
   : null;
 
 const enrollSchema = z.object({
@@ -34,33 +35,39 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   const { classId, paymentMethodId } = parsed.data;
 
+  if (!isValidObjectId(classId)) return res.status(400).json({ success: false, message: "Invalid class ID" });
   const cls = await ClassModel.findById(classId);
   if (!cls) {
     return res.status(404).json({ success: false, message: "Class not found" });
   }
 
+  if (cls.status !== 'published') return res.status(409).json({ success: false, message: 'This class is not open for enrollment' });
+  if (String(cls.instructor.id) === req.user!.id) return res.status(409).json({ success: false, message: 'You already teach this class' });
+  const existing = await EnrollmentModel.findOne({ classId, userId: req.user!.id });
+  if (existing) return res.status(existing.status === 'dropped' ? 409 : 200).json({ success: existing.status !== 'dropped', data: { ...existing.toObject(), id: existing.id }, message: existing.status === 'dropped' ? 'This enrollment was dropped. Contact the instructor.' : 'Already enrolled' });
+  if (cls.price > 0 && (!stripe || !paymentMethodId)) return res.status(402).json({ success: false, message: 'Paid enrollment requires a configured payment method. No payment has been taken.' });
   let paymentRecord;
 
-  if (stripe && paymentMethodId) {
+  if (cls.price > 0 && stripe && paymentMethodId) {
     const amountInCents = Math.round(cls.price * 100);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInCents,
-      currency: "usd",
+      currency: cls.currency.toLowerCase(),
       payment_method: paymentMethodId,
       confirm: true,
-      automatic_payment_methods: { enabled: true },
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
       metadata: {
         classId: cls.id,
         userId: req.user!.id,
       },
-    });
+    }, { idempotencyKey: `enroll-${req.user!.id}-${cls.id}` });
 
     paymentRecord = await PaymentModel.create({
       userId: req.user!.id,
       classId: cls.id,
       amount: cls.price,
-      currency: "usd",
+      currency: cls.currency.toLowerCase(),
       status: paymentIntent.status === "succeeded" ? "completed" : "pending",
       paymentMethod: paymentIntent.payment_method_types.join(","),
       stripePaymentIntentId: paymentIntent.id,
@@ -73,27 +80,15 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
         message: "Payment not completed",
       });
     }
-  } else {
-    // Demo mode: no real Stripe key configured
-    paymentRecord = await PaymentModel.create({
-      userId: req.user!.id,
-      classId: cls.id,
-      amount: cls.price,
-      currency: "usd",
-      status: "completed",
-      paymentMethod: "demo",
-    });
   }
 
-  const enrollment = await EnrollmentModel.create({
-    classId: cls.id,
-    userId: req.user!.id,
-    status: "active",
-    progress: 0,
-  });
-
-  cls.enrolledStudents += 1;
-  await cls.save();
+  const result = await EnrollmentModel.updateOne(
+    { classId: cls.id, userId: req.user!.id },
+    { $setOnInsert: { status: 'active', progress: 0, enrolledAt: new Date() } },
+    { upsert: true }
+  );
+  const enrollment = await EnrollmentModel.findOne({ classId: cls.id, userId: req.user!.id });
+  if (result.upsertedCount) await ClassModel.updateOne({ _id: cls._id }, { $inc: { enrolledStudents: 1 } });
 
   await NotificationModel.create({
     userId: req.user!.id,
@@ -106,7 +101,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   return res.status(201).json({
     success: true,
-    data: enrollment,
+    data: enrollment ? { ...enrollment.toObject(), id: enrollment.id } : null,
     message: "Enrolled successfully",
   });
 });
@@ -129,7 +124,7 @@ router.get("/my", requireAuth, async (req: AuthRequest, res) => {
   return res.json({
     success: true,
     data: {
-      data: items,
+      data: items.map(e => ({ ...e.toObject(), id: e.id })),
       pagination: {
         page,
         pageSize,
@@ -154,6 +149,7 @@ router.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
     return res.status(403).json({ success: false, message: "Forbidden" });
   }
 
+  if (enrollment.status !== "dropped") await ClassModel.updateOne({ _id: enrollment.classId, enrolledStudents: { $gt: 0 } }, { $inc: { enrolledStudents: -1 } });
   enrollment.status = "dropped";
   await enrollment.save();
 

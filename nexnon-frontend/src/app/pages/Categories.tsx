@@ -1,3 +1,4 @@
+import { useBackendData } from '@/hooks/useBackendData';
 import { 
   Code, 
   Palette, 
@@ -19,7 +20,6 @@ const categories = [
     name: "Development",
     slug: "development",
     icon: Code,
-    courses: "2,500+ live classes",
     image: "https://images.unsplash.com/photo-1565229284535-2cbbe3049123?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9ncmFtbWluZyUyMGNvZGluZyUyMGRldmVsb3BlcnxlbnwxfHx8fDE3Njg3NDEzMjF8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-blue-500 to-blue-600"
   },
@@ -28,7 +28,6 @@ const categories = [
     name: "Design",
     slug: "design",
     icon: Palette,
-    courses: "1,800+ live classes",
     image: "https://images.unsplash.com/photo-1624901344246-8759f305fef3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjcmVhdGl2ZSUyMGRlc2lnbiUyMGFydHxlbnwxfHx8fDE3Njg4MDQ3ODR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-purple-500 to-purple-600"
   },
@@ -37,7 +36,6 @@ const categories = [
     name: "Marketing",
     slug: "marketing",
     icon: TrendingUp,
-    courses: "1,200+ live classes",
     image: "https://images.unsplash.com/photo-1702047094974-a3475a6e37f5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYXJrZXRpbmclMjBkaWdpdGFsJTIwd29ya3NwYWNlfGVufDF8fHx8MTc2ODgwNDc4NHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-green-500 to-green-600"
   },
@@ -46,7 +44,6 @@ const categories = [
     name: "Business",
     slug: "business",
     icon: Briefcase,
-    courses: "1,500+ live classes",
     image: "https://images.unsplash.com/photo-1766867264693-e34f484d3371?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMHByb2Zlc3Npb25hbCUyMHRlYWNoaW5nfGVufDF8fHx8MTc2ODgwNDc4NHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-orange-500 to-orange-600"
   },
@@ -55,7 +52,6 @@ const categories = [
     name: "Photography",
     slug: "photography",
     icon: Camera,
-    courses: "900+ live classes",
     image: "https://images.unsplash.com/photo-1613398773682-9e272a85f203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB0ZWNobm9sb2d5JTIwbGFwdG9wfGVufDF8fHx8MTc2ODgwMDY2Mnww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-pink-500 to-pink-600"
   },
@@ -64,7 +60,6 @@ const categories = [
     name: "Music",
     slug: "music",
     icon: Music,
-    courses: "750+ live classes",
     image: "https://images.unsplash.com/photo-1759984782106-4b56d0aa05b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxvbmxpbmUlMjBsZWFybmluZyUyMHN0dWRlbnR8ZW58MXx8fHwxNzY4ODAyMjUyfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-red-500 to-red-600"
   },
@@ -73,7 +68,6 @@ const categories = [
     name: "Health & Wellness",
     slug: "health-wellness",
     icon: Heart,
-    courses: "650+ live classes",
     image: "https://images.unsplash.com/photo-1759984782106-4b56d0aa05b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxvbmxpbmUlMjBsZWFybmluZyUyMHN0dWRlbnR8ZW58MXx8fHwxNzY4ODAyMjUyfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-[#889dd1] to-[#7a8ec5]"
   },
@@ -82,7 +76,6 @@ const categories = [
     name: "Languages",
     slug: "languages",
     icon: Globe,
-    courses: "1,100+ live classes",
     image: "https://images.unsplash.com/photo-1613398773682-9e272a85f203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB0ZWNobm9sb2d5JTIwbGFwdG9wfGVufDF8fHx8MTc2ODgwMDY2Mnww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
     color: "from-indigo-500 to-indigo-600"
   }
@@ -90,13 +83,14 @@ const categories = [
 
 export default function Categories() {
   const navigate = useNavigate();
+  const categoryQuery = useBackendData<{ name: string; count: number }[]>("/data/categories", true);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
       <Header />
       <main>
         {/* Hero Section with Background */}
-        <section className="relative overflow-hidden -mt-16 min-h-[400px] h-[50vh] flex items-center">
+        <section className="relative overflow-hidden min-h-[400px] h-[50vh] flex items-center">
           {/* Background Image with Modern Overlay */}
           <div className="absolute inset-0 z-0">
             <img 
@@ -161,7 +155,7 @@ export default function Categories() {
                       </h3>
 
                       <div className="flex items-center text-sm text-gray-600 m-[0px] -mt-1 mx-[0px] my-[5px]">
-                        <span className="text-[12px]">{category.courses}</span>
+                        <span className="text-[12px]">{categoryQuery.isError ? "Unavailable" : categoryQuery.isPending ? "Loading..." : `${categoryQuery.data?.find(c => c.name === category.name)?.count || 0} live classes`}</span>
                       </div>
                     </div>
                   </div>

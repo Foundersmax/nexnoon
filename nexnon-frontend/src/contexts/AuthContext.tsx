@@ -32,11 +32,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const token = localStorage.getItem('authToken');
         if (!token) {
-          // Fallback to cached user if present (for quick UI load), but most API calls require token
-          const storedUser = localStorage.getItem('user');
-          if (storedUser) {
-            setUser(JSON.parse(storedUser));
-          }
+          localStorage.removeItem('user');
+          setUser(null);
           return;
         }
 

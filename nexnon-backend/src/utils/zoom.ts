@@ -15,7 +15,7 @@ export interface ZoomMeeting {
 
 /**
  * Lightweight Zoom integration.
- * If Zoom env vars are missing, this returns a mocked meeting URL so the rest
+ * If Zoom env vars are missing, this returns empty meeting details so the rest
  * of the app can still function in development/demo mode.
  */
 export const createZoomMeeting = async (
@@ -24,11 +24,11 @@ export const createZoomMeeting = async (
   const { ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET } = ENV;
 
   if (!ZOOM_ACCOUNT_ID || !ZOOM_CLIENT_ID || !ZOOM_CLIENT_SECRET) {
-    // Fallback: demo Zoom link
+    // No fabricated meeting details when Zoom is not configured.
     return {
-      join_url: 'https://zoom.us/j/1234567890?pwd=demo',
-      id: 'demo-meeting-id',
-      password: 'demo-passcode',
+      join_url: '',
+      id: '',
+      password: '',
     };
   }
 

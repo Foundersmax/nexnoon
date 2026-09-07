@@ -1,3 +1,4 @@
+import BrandLoader from '@/app/components/BrandLoader';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { Bell, CheckCheck, Trash2, Settings, Users, Video, Award, DollarSign, MessageSquare, Calendar } from 'lucide-react';
@@ -33,27 +34,18 @@ function formatTimeAgo(createdAt: string): string {
   return d.toLocaleDateString();
 }
 
-const DEMO_NOTIFICATIONS: NotificationUI[] = [
-  { id: 1, type: 'class', title: 'Class Starting Soon', message: 'Advanced React Patterns starts in 30 minutes', time: '5 min ago', read: false, actionUrl: '/class/1/waiting-room/session-1' },
-  { id: 2, type: 'achievement', title: 'Certificate Earned!', message: 'You completed Photography Masterclass', time: '2 hours ago', read: false, actionUrl: '/certificate/5' },
-  { id: 3, type: 'payment', title: 'Payment Successful', message: 'Enrolled in UI/UX Design Fundamentals', time: '1 day ago', read: true, actionUrl: '/class/2' },
-  { id: 4, type: 'message', title: 'New Message from Nexnoon Expert', message: 'Sarah Johnson replied to your question', time: '2 days ago', read: true, actionUrl: '/classroom/1' },
-  { id: 5, type: 'system', title: 'New Feature Available', message: 'Check out our new live chat feature', time: '3 days ago', read: true },
-  { id: 6, type: 'class', title: 'Assignment Due Soon', message: 'React Assignment #3 due in 2 days', time: '4 days ago', read: true, actionUrl: '/class/1/assignments' },
-];
-
 export default function Notifications() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
-  const [notifications, setNotifications] = useState<NotificationUI[]>(DEMO_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationUI[]>([]);
   const [loading, setLoading] = useState(false);
 
   const useRealData = !ENV.ENABLE_DEMO_MODE && isAuthenticated;
 
   useEffect(() => {
     if (!useRealData) {
-      setNotifications(DEMO_NOTIFICATIONS);
+      setNotifications([]);
       return;
     }
     setLoading(true);
@@ -161,7 +153,7 @@ export default function Notifications() {
           <div className="mb-8">
             {!useRealData && (
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                <strong>Demo:</strong> Sample notifications. Sign in with API mode on to see your real notifications.
+                Sign in to see your notifications.
               </div>
             )}
             <div className="flex items-center justify-between mb-4">
@@ -223,7 +215,7 @@ export default function Notifications() {
           <div className="space-y-3">
             {loading ? (
               <div className="bg-white border border-gray-300 rounded-xl p-12 text-center text-gray-600">
-                Loading notifications...
+                <BrandLoader />
               </div>
             ) : filteredNotifications.length === 0 ? (
               <div className="bg-white border border-gray-300 rounded-xl p-12 text-center">

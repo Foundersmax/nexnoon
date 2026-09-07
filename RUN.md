@@ -1,3 +1,50 @@
+## Full class detail content
+
+The original full class detail layout is used for backend classes. Teachers enter the overview, biography, image, preview video, curriculum topics/projects, outcomes, certificate information, and FAQs in Create/Edit Class > Content > Full Class Details. These fields are stored in MongoDB and returned by the class API. Student reviews are loaded separately from the reviews endpoint.
+
+## Local demo accounts
+
+With MongoDB and the backend running, run `npm.cmd run seed:demo` from `nexnon-backend` to create or verify the local teacher and student accounts. This command refuses production or remote databases. Credentials are saved in the gitignored `nexnon-backend/.local-data/demo-accounts.json`; they are not bundled in the frontend.
+
+Sign in at http://localhost:5173/login. The teacher owns **Build Your First Web Page - Demo Workshop**, and the student is enrolled. Test My Classes, the classroom materials/assignment, and the instructor dashboard. The demo session has no Zoom meeting or recording. Re-running setup preserves passwords and existing class edits and does not duplicate enrollment. These local accounts do not exist in Atlas or the deployed app.
+
+# Current local setup (7 September 2026)
+
+MongoDB runs as the Windows `MongoDB` service. Local app data is stored in the `nexnoon` database.
+
+Backend `.env`:
+
+```dotenv
+NODE_ENV=development
+PORT=4000
+MONGODB_URI=mongodb://127.0.0.1:27017/nexnoon
+MONGODB_DNS_SERVERS=
+FRONTEND_URL=http://localhost:5173
+```
+
+Start the backend in one terminal:
+
+```powershell
+cd nexnon-backend
+npm.cmd run dev
+```
+
+Start the frontend in another terminal:
+
+```powershell
+cd nexnon-frontend
+npm.cmd run dev
+```
+
+Open http://localhost:5173. Backend health: http://localhost:4000/health.
+The frontend uses http://localhost:4000/v1. Sample class data is disabled; create an instructor account and publish a class. Use a free class for enrollment testing because payment collection is not yet implemented in the frontend.
+
+Verification: `npm.cmd test` in the backend runs API integration checks against a uniquely named temporary local database, then removes that test database. It does not modify the app's `nexnoon` database. In the frontend, run `npm.cmd run typecheck` and `npm.cmd run build`.
+
+For Render, set `NODE_ENV=production` and set `MONGODB_URI` to the real Atlas Drivers connection string in the Render dashboard. Set production JWT secrets and `FRONTEND_URL` to the Vercel origin. Local `.env` files are ignored by Git and are not deployed. See DEPLOY_TESTING.md.
+
+---
+
 # Nexnoon – Run & Test (Local & Production-Ready)
 
 This guide gets backend and frontend in sync so you can run and test locally, then go live.

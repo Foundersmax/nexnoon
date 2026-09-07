@@ -1,3 +1,5 @@
+import ClassDetailsEditor from '@/app/components/ClassDetailsEditor';
+import type { ClassDetails } from '@/types/api';
 import { useState } from 'react';
 import { ArrowLeft, Upload, Plus, X, Calendar, Clock, DollarSign, Users, BookOpen, Video, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router';
@@ -15,6 +17,7 @@ export default function CreateClass() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
+  const [details, setDetails] = useState<ClassDetails>({});
 
   // Form state
   const [formData, setFormData] = useState({
@@ -44,8 +47,8 @@ export default function CreateClass() {
     'Business',
     'Photography',
     'Music',
-    'Health & Fitness',
-    'Language Learning',
+    'Health & Wellness',
+    'Languages',
     'Data Science',
     'Personal Development',
   ];
@@ -136,6 +139,7 @@ export default function CreateClass() {
     const payload: CreateClassRequest = {
       title: formData.title.trim(),
       description: formData.description.trim(),
+      details,
       category: formData.category,
       level,
       price,
@@ -143,6 +147,13 @@ export default function CreateClass() {
       totalSessions,
       startDate: formData.startDate ? new Date(formData.startDate).toISOString() : undefined,
       schedule: buildSchedule(),
+      thumbnail: thumbnail || undefined,
+      language: formData.language,
+      maxStudents: Number(formData.maxStudents) || undefined,
+      learningOutcomes: formData.learningOutcomes.filter(Boolean),
+      prerequisites: formData.prerequisites.filter(Boolean),
+      materials: formData.materials.filter(Boolean),
+      status: 'published',
     };
 
     if (ENV.ENABLE_DEMO_MODE && !localStorage.getItem('authToken')) {
@@ -437,6 +448,7 @@ export default function CreateClass() {
             {/* Step 3: Content */}
             {currentStep === 3 && (
               <div className="space-y-8">
+                <ClassDetailsEditor value={details} onChange={value => { setDetails(value);  }} />
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
                     <BookOpen className="h-5 w-5" />

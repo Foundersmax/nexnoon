@@ -1,3 +1,4 @@
+import BrandLoader from '@/app/components/BrandLoader';
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { Search as SearchIcon, Filter, Clock, Users, Star, TrendingUp } from 'lucide-react';
@@ -10,7 +11,6 @@ import { classService } from '@/lib/api';
 import { ENV } from '@/config/env';
 import { classDetailUrl } from '@/lib/url';
 import type { Class } from '@/types/api';
-import { searchCourses, courseToSearchResult } from '@/data/courses';
 
 type SearchResultCard = {
   id: string | number;
@@ -42,7 +42,6 @@ function apiClassToSearchCard(c: Class): SearchResultCard {
   };
 }
 
-const MOCK_SEARCH_RESULTS = searchCourses('').slice(0, 20).map(courseToSearchResult);
 
 export default function Search() {
   const location = useLocation();
@@ -61,7 +60,7 @@ export default function Search() {
     setSearchTerm(query);
   }, [query]);
 
-  const useApiSearch = !ENV.ENABLE_DEMO_MODE && query.trim().length > 0;
+  const useApiSearch = true;
 
   useEffect(() => {
     if (!useApiSearch) {
@@ -70,15 +69,13 @@ export default function Search() {
     }
     setSearchLoading(true);
     classService
-      .searchClasses(query.trim())
+      .searchClasses(query.trim(), { pageSize: 100 })
       .then((res) => setApiResults((res.data || []).map(apiClassToSearchCard)))
       .catch(() => setApiResults([]))
       .finally(() => setSearchLoading(false));
   }, [query, useApiSearch]);
 
-  const searchResults = useApiSearch
-    ? apiResults
-    : (query.trim() ? searchCourses(query).map(courseToSearchResult) : MOCK_SEARCH_RESULTS);
+  const searchResults = apiResults;
 
   const filteredResults = searchResults.filter((result) => {
     const matchesCategory = filterCategory === 'all' || result.category === filterCategory;
@@ -220,10 +217,7 @@ export default function Search() {
             <div className="lg:col-span-3">
               {searchLoading ? (
                 <div className="bg-white border border-gray-300 rounded-xl p-12 text-center">
-                  <div className="animate-pulse flex flex-col items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-gray-200" />
-                    <p className="text-gray-600">Searching classes...</p>
-                  </div>
+                  <BrandLoader />
                 </div>
               ) : filteredResults.length === 0 ? (
                 <div className="bg-white border border-gray-300 rounded-xl p-12 text-center">

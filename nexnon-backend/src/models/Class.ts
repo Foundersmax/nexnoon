@@ -15,12 +15,19 @@ export interface IClassSchedule extends Document {
 }
 
 export interface IClass extends Document {
+  details?: { overview?: string; instructorTitle?: string; instructorBio?: string; instructorImage?: string; previewVideoUrl?: string; curriculumIntro?: string; certificateInfo?: string; outcomes?: string[]; curriculum?: { title: string; topics: string[]; project: string }[]; faqs?: { question: string; answer: string }[] };
   title: string;
   description: string;
   category: string;
   level: 'Beginner' | 'Intermediate' | 'Advanced';
   price: number;
   currency: string;
+  language?: string;
+  maxStudents?: number;
+  learningOutcomes: string[];
+  prerequisites: string[];
+  materials: string[];
+  assignments: { title: string; description?: string; dueDate?: Date }[];
   instructor: {
     id: Types.ObjectId;
     name: string;
@@ -42,14 +49,28 @@ export interface IClass extends Document {
   updatedAt: Date;
 }
 
+const DetailsSchema = new Schema({
+  overview: String, instructorTitle: String, instructorBio: String, instructorImage: String,
+  previewVideoUrl: String, curriculumIntro: String, certificateInfo: String, outcomes: [String],
+  curriculum: [{ title: String, topics: [String], project: String }],
+  faqs: [{ question: String, answer: String }],
+}, { _id: false });
+
 const ClassSchema = new Schema<IClass>(
   {
+    details: { type: DetailsSchema },
     title: { type: String, required: true },
     description: { type: String, required: true },
     category: { type: String, required: true },
     level: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'], required: true },
     price: { type: Number, required: true },
     currency: { type: String, default: 'USD' },
+    language: { type: String },
+    maxStudents: { type: Number },
+    learningOutcomes: { type: [String], default: [] },
+    prerequisites: { type: [String], default: [] },
+    materials: { type: [String], default: [] },
+    assignments: { type: [{ title: String, description: String, dueDate: Date }], default: [] },
     instructor: {
       id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
       name: { type: String, required: true },

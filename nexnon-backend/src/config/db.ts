@@ -1,9 +1,14 @@
 import mongoose from "mongoose";
+import { setServers } from "node:dns/promises";
 import { ENV } from "./env";
 
 export const connectDB = async () => {
   try {
-    await mongoose.connect(ENV.MONGODB_URI);
+    const servers = ENV.MONGODB_DNS_SERVERS.split(',').map(value => value.trim()).filter(Boolean);
+    if (ENV.MONGODB_URI.startsWith('mongodb+srv://') && servers.length) {
+      setServers(servers);
+    }
+    await mongoose.connect(ENV.MONGODB_URI, { serverSelectionTimeoutMS: 15000, connectTimeoutMS: 10000 });
     console.log("✅ MongoDB connected successfully");
     console.log(
       `   Database: ${ENV.MONGODB_URI.split("/").pop()?.split("?")[0]}`,

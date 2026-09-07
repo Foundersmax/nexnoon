@@ -1,3 +1,39 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* Consistent mouse feedback for native controls and accessible UI primitives. */
+:is(
+  a[href],
+  button,
+  select,
+  summary,
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  input[type='checkbox'],
+  input[type='radio'],
+  [role='button'],
+  [role='link'],
+  [role='tab'],
+  [role='checkbox'],
+  [role='radio'],
+  [role='switch'],
+  [role='option'],
+  [role='menuitem'],
+  [role='menuitemcheckbox'],
+  [role='menuitemradio'],
+  label:has(input[type='checkbox'], input[type='radio'])
+):not(:disabled):not([aria-disabled='true']):not([data-disabled]:not([data-disabled='false'])):not(:has(input:disabled)) {
+  cursor: pointer;
+}
+
+input[type='file']::file-selector-button {
+  cursor: pointer;
+}
+
+:is(button, input, select, [role], a[href]):is(:disabled, [aria-disabled='true'], [data-disabled]:not([data-disabled='false'])),
+label:has(input:disabled),
+input[type='file']:disabled::file-selector-button {
+  cursor: not-allowed;
+}

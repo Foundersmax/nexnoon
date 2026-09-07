@@ -22,7 +22,6 @@ import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
 import { Button } from '@/app/components/ui/button';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
-import { getCoursesByCategorySlug, courseToCategoryListItem } from '@/data/courses';
 
 // Category metadata
 const categoryData: Record<string, {
@@ -39,7 +38,7 @@ const categoryData: Record<string, {
     description: 'Master programming, web development, mobile apps, and software engineering with live expert instruction.',
     image: 'https://images.unsplash.com/photo-1565229284535-2cbbe3049123?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9ncmFtbWluZyUyMGNvZGluZyUyMGRldmVsb3BlcnxlbnwxfHx8fDE3Njg3NDEzMjF8MA&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-blue-500 to-blue-600',
-    totalClasses: '2,500+'
+    totalClasses: ''
   },
   'design': {
     name: 'Design',
@@ -47,7 +46,7 @@ const categoryData: Record<string, {
     description: 'Learn UI/UX design, graphic design, web design, and creative visual arts from industry professionals.',
     image: 'https://images.unsplash.com/photo-1624901344246-8759f305fef3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjcmVhdGl2ZSUyMGRlc2lnbiUyMGFydHxlbnwxfHx8fDE3Njg4MDQ3ODR8MA&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-purple-500 to-purple-600',
-    totalClasses: '1,800+'
+    totalClasses: ''
   },
   'marketing': {
     name: 'Marketing',
@@ -55,7 +54,7 @@ const categoryData: Record<string, {
     description: 'Explore digital marketing, SEO, social media, content strategy, and growth hacking techniques.',
     image: 'https://images.unsplash.com/photo-1702047094974-a3475a6e37f5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYXJrZXRpbmclMjBkaWdpdGFsJTIwd29ya3NwYWNlfGVufDF8fHx8MTc2ODgwNDc4NHww&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-green-500 to-green-600',
-    totalClasses: '1,200+'
+    totalClasses: ''
   },
   'business': {
     name: 'Business',
@@ -63,7 +62,7 @@ const categoryData: Record<string, {
     description: 'Develop business strategy, entrepreneurship, management, and leadership skills for career growth.',
     image: 'https://images.unsplash.com/photo-1766867264693-e34f484d3371?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMHByb2Zlc3Npb25hbCUyMHRlYWNoaW5nfGVufDF8fHx8MTc2ODgwNDc4NHww&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-orange-500 to-orange-600',
-    totalClasses: '1,500+'
+    totalClasses: ''
   },
   'photography': {
     name: 'Photography',
@@ -71,7 +70,7 @@ const categoryData: Record<string, {
     description: 'Master photography techniques, photo editing, videography, and visual storytelling.',
     image: 'https://images.unsplash.com/photo-1613398773682-9e272a85f203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB0ZWNobm9sb2d5JTIwbGFwdG9wfGVufDF8fHx8MTc2ODgwMDY2Mnww&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-pink-500 to-pink-600',
-    totalClasses: '900+'
+    totalClasses: ''
   },
   'music': {
     name: 'Music',
@@ -79,7 +78,7 @@ const categoryData: Record<string, {
     description: 'Learn music production, instrument mastery, music theory, and audio engineering.',
     image: 'https://images.unsplash.com/photo-1759984782106-4b56d0aa05b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxvbmxpbmUlMjBsZWFybmluZyUyMHN0dWRlbnR8ZW58MXx8fHwxNzY4ODAyMjUyfDA&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-red-500 to-red-600',
-    totalClasses: '750+'
+    totalClasses: ''
   },
   'health-wellness': {
     name: 'Health & Wellness',
@@ -87,7 +86,7 @@ const categoryData: Record<string, {
     description: 'Discover fitness, nutrition, yoga, meditation, and holistic wellness practices.',
     image: 'https://images.unsplash.com/photo-1759984782106-4b56d0aa05b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxvbmxpbmUlMjBsZWFybmluZyUyMHN0dWRlbnR8ZW58MXx8fHwxNzY4ODAyMjUyfDA&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-[#889dd1] to-[#7a8ec2]',
-    totalClasses: '650+'
+    totalClasses: ''
   },
   'languages': {
     name: 'Languages',
@@ -95,7 +94,7 @@ const categoryData: Record<string, {
     description: 'Learn new languages, improve communication skills, and explore world cultures.',
     image: 'https://images.unsplash.com/photo-1613398773682-9e272a85f203?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB0ZWNobm9sb2d5JTIwbGFwdG9wfGVufDF8fHx8MTc2ODgwMDY2Mnww&ixlib=rb-4.1.0&q=80&w=1080',
     color: 'from-indigo-500 to-indigo-600',
-    totalClasses: '1,100+'
+    totalClasses: ''
   }
 };
 
@@ -104,16 +103,19 @@ export default function CategoryDetail() {
   const navigate = useNavigate();
   const [sortBy, setSortBy] = useState('popular');
   const [levelFilter, setLevelFilter] = useState<string[]>([]);
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 200]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, Infinity]);
   const [showFilters, setShowFilters] = useState(false);
   const useRealData = !ENV.ENABLE_DEMO_MODE;
   type ClassItem = { id: string | number; title: string; instructor: string; rating: number; students: number; price: number; duration: string; level: string; thumbnail: string; nextSession: string };
+  const [totalClasses, setTotalClasses] = useState(0);
+  const [apiError, setApiError] = useState('');
   const [apiClasses, setApiClasses] = useState<ClassItem[]>([]);
 
   useEffect(() => {
     if (!useRealData || !category) return;
     classService.getClassesByCategory(category, { pageSize: 50 })
       .then((res) => {
+        setApiError(''); setTotalClasses(res.pagination.totalItems);
         const list = (res.data || []).map((c: { id: string; title: string; instructor?: { name?: string }; rating?: number; enrolledStudents?: number; price?: number; duration?: number; level?: string; thumbnail?: string }) => ({
           id: c.id,
           title: c.title,
@@ -128,10 +130,10 @@ export default function CategoryDetail() {
         }));
         setApiClasses(list);
       })
-      .catch(() => setApiClasses([]));
+      .catch(() => { setApiClasses([]); setApiError('Unable to load classes. Please try again.'); });
   }, [useRealData, category]);
 
-  const categoryInfo = category ? categoryData[category] : null;
+  const categoryInfo = category ? categoryData[category] || { name: category.replace(/-/g, ' '), icon: BookOpen, description: 'Live classes from our instructors.', image: '', color: 'from-gray-700 to-gray-900', totalClasses: '' } : null;
 
   if (!categoryInfo) {
     return (
@@ -152,9 +154,8 @@ export default function CategoryDetail() {
     );
   }
 
-  // Apply filters: use API when real mode, else courses.ts dummy data
-  const demoClasses = category ? getCoursesByCategorySlug(category).map(courseToCategoryListItem) : [];
-  let filteredClasses = useRealData ? [...apiClasses] : [...demoClasses];
+  // Filter and sort the returned backend classes.
+  let filteredClasses = [...apiClasses];
 
   // Filter by level
   if (levelFilter.length > 0) {
@@ -168,7 +169,7 @@ export default function CategoryDetail() {
   filteredClasses.sort((a, b) => {
     switch (sortBy) {
       case 'newest':
-        return b.id - a.id;
+        return 0; // API returns newest classes first.
       case 'price-low':
         return a.price - b.price;
       case 'price-high':
@@ -196,6 +197,7 @@ export default function CategoryDetail() {
       <Header variant="light" />
       
       <main>
+        {apiError && <p role="alert" className="p-4 text-red-600">{apiError}</p>}
         {/* Hero Section */}
         <section className="relative overflow-hidden bg-gradient-to-br from-black/90 to-black/80 py-20">
           {/* Background Image */}
@@ -244,7 +246,7 @@ export default function CategoryDetail() {
                 <div className="flex flex-wrap items-center gap-6 text-white/80">
                   <div className="flex items-center gap-2">
                     <BookOpen className="h-5 w-5" />
-                    <span className="font-medium">{categoryInfo.totalClasses} Live Classes</span>
+                    <span className="font-medium">{totalClasses.toLocaleString()} Live Classes</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">All Skill Levels</span>

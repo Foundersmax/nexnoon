@@ -1,3 +1,4 @@
+import BrandLoader from '../components/BrandLoader';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { CheckCircle, Calendar, Clock, ArrowRight, Download } from 'lucide-react';
@@ -9,7 +10,6 @@ import { classService } from '@/lib/api';
 import { ENV } from '@/config/env';
 import { classDetailUrl } from '@/lib/url';
 import type { Class } from '@/types/api';
-import { getCourseById } from '@/data/courses';
 
 export default function EnrollmentSuccess() {
   const { id } = useParams();
@@ -35,22 +35,10 @@ export default function EnrollmentSuccess() {
       .finally(() => setLoading(false));
   }, [id, useRealDataOnly]);
 
-  const mockData = getCourseById(id || '');
-  const classData = useRealDataOnly
-    ? apiClass
-      ? {
-          title: apiClass.title,
-          duration: apiClass.duration ? `${Math.round(apiClass.duration / 60)} hr total` : `${apiClass.totalSessions || 0} sessions`,
-          nextSession: 'Check your dashboard for schedule',
-        }
-      : null
-    : mockData
-      ? {
-          title: mockData.title,
-          duration: '4 Weeks',
-          nextSession: `${mockData.date} at ${mockData.time}`,
-        }
-      : null;
+  const classData = apiClass ? { title: apiClass.title,
+    duration: `${apiClass.totalSessions} sessions`,
+    nextSession: apiClass.schedule?.[0]?.startTime ? new Date(apiClass.schedule[0].startTime).toLocaleString() : 'Not scheduled yet',
+  } : null;
 
   useEffect(() => {
     if (!loading && !classData && useRealDataOnly) navigate('/');
@@ -89,8 +77,7 @@ export default function EnrollmentSuccess() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-[#889dd1] border-r-transparent mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <BrandLoader />
         </div>
       </div>
     );
@@ -193,7 +180,7 @@ export default function EnrollmentSuccess() {
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Button>
                 <Button
-                  onClick={() => id && navigate(classDetailUrl(id, apiClass?.title ?? mockData?.title))}
+                  onClick={() => id && navigate(classDetailUrl(id, apiClass?.title))}
                   variant="outline"
                   className="flex-1 py-4 text-lg font-semibold border-2"
                 >

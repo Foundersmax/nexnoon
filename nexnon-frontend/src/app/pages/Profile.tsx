@@ -6,7 +6,7 @@ import Footer from '@/app/components/Footer';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
-import DemoModeToggle from '@/app/components/DemoModeToggle';
+
 import { classService } from '@/lib/api';
 import { ENV } from '@/config/env';
 
@@ -17,15 +17,7 @@ export default function Profile() {
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
 
-  const [demoRole, setDemoRole] = useState<'student' | 'instructor'>('student');
-  const demoUser = {
-    id: 'demo',
-    email: 'demo@nexnoon.com',
-    name: 'Demo User',
-    role: demoRole,
-  };
-
-  const currentUser = useRealData ? user : (user || demoUser);
+  const currentUser = user;
 
   const [formData, setFormData] = useState({
     name: currentUser?.name || '',
@@ -68,8 +60,8 @@ export default function Profile() {
           setStats({
             enrolledClasses: res.pagination?.totalItems ?? enrollments.length,
             completed,
-            hoursLearned: 0,
-            certificates: 0,
+            hoursLearned: undefined,
+            certificates: enrollments.filter(e => e.status === 'completed' && e.certificateUrl).length,
           });
         })
         .catch(() => setStats({}));
@@ -306,7 +298,7 @@ export default function Profile() {
                   <span className="font-medium text-gray-900">My Classes</span>
                 </button>
                 <button
-                  onClick={() => navigate('/instructor-dashboard')}
+                  onClick={() => navigate('/instructor/dashboard')}
                   className="flex flex-col items-center justify-center p-6 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all"
                 >
                   <DollarSign className="h-8 w-8 text-[#889dd1] mb-2" />
@@ -343,13 +335,6 @@ export default function Profile() {
       
       <Footer />
       
-      {/* Demo Mode Toggle - Only show when demo mode and not authenticated */}
-      {!useRealData && !isAuthenticated && (
-        <DemoModeToggle 
-          currentRole={demoRole} 
-          onRoleChange={(role) => setDemoRole(role)} 
-        />
-      )}
     </div>
   );
 }

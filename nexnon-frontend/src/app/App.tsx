@@ -1,3 +1,4 @@
+import BrandLoader from './components/BrandLoader';
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { QueryProvider } from "@/providers/QueryProvider";
@@ -50,33 +51,24 @@ const Terms = lazy(() => import("@/app/pages/Terms"));
 const WaitingRoom = lazy(() => import("@/app/pages/WaitingRoom"));
 
 // Loading fallback component
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="text-center">
-        <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-gray-900 border-r-transparent mb-4"></div>
-        <p className="text-gray-600">Loading...</p>
-      </div>
-    </div>
-  );
-}
+function LoadingFallback() { return <BrandLoader fullScreen />; }
 
 function Home() {
   const categories = [
-    "All", 
-    "Development", 
-    "Design", 
-    "Marketing", 
-    "Business", 
-    "Technology", 
-    "Photography", 
-    "Music", 
-    "Health & Fitness", 
-    "Personal Development", 
-    "Teaching", 
+    "All",
+    "Development",
+    "Design",
+    "Marketing",
+    "Business",
+    "Technology",
+    "Photography",
+    "Music",
+    "Health & Wellness",
+    "Personal Development",
+    "Teaching",
     "Data Science",
     "Finance",
-    "Language",
+    "Languages",
     "Lifestyle"
   ];
   const [activeCategory, setActiveCategory] = useState(0);
@@ -96,9 +88,9 @@ function Home() {
 
   return (
     <div className="min-h-screen bg-white">
-      <Header />
+      <Header variant="light" />
       <main>
-        <Hero />
+        <Hero variant="browse" />
         <section className="pt-4 sm:pt-6 pb-8 sm:pb-12 bg-white">
           <div className="w-[90vw] mx-auto">
             <div className="text-center">
@@ -146,13 +138,13 @@ function Home() {
             </div>
           </div>
         </section>
-        <LiveClasses 
-          title={categories[activeCategory]} 
-          showTitle={false} 
-          variant="large" 
-          showBorderHover={false} 
-          selectedCategory={categories[activeCategory]} 
-          showLoadMore={true} 
+        <LiveClasses
+          title={categories[activeCategory]}
+          showTitle={false}
+          variant="large"
+          showBorderHover={false}
+          selectedCategory={categories[activeCategory]}
+          showLoadMore={true}
         />
       </main>
       <Footer />
@@ -185,7 +177,7 @@ const router = createBrowserRouter([
         element: <Suspense fallback={<LoadingFallback />}><Analytics /></Suspense>,
       },
       {
-        path: "/assignments",
+        path: "/assignments/:id?",
         element: <Suspense fallback={<LoadingFallback />}><Assignments /></Suspense>,
       },
       {
@@ -258,7 +250,7 @@ const router = createBrowserRouter([
         element: <Suspense fallback={<LoadingFallback />}><Login /></Suspense>,
       },
       {
-        path: "/materials",
+        path: "/materials/:id?",
         element: <Suspense fallback={<LoadingFallback />}><Materials /></Suspense>,
       },
       {

@@ -1,3 +1,7 @@
+import ClassDetailsEditor from '@/app/components/ClassDetailsEditor';
+import type { ClassDetails } from '@/types/api';
+import { classService, getErrorMessage } from '@/lib/api';
+import BackendState from '@/app/components/BackendState';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Upload, Plus, X, Calendar, Clock, DollarSign, Users, BookOpen, Video, FileText, Trash2, Save } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
@@ -12,38 +16,31 @@ export default function EditClass() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
+  const [details, setDetails] = useState<ClassDetails>({});
 
-  // Mock existing class data - TODO: Fetch from backend
   const existingClass = {
-    title: 'Advanced React Patterns & Best Practices',
-    description: 'Master advanced React patterns including HOCs, Render Props, Compound Components, and more. This comprehensive course will take your React skills to the next level.',
-    category: 'Development',
-    price: '299',
-    duration: '120',
-    maxStudents: '30',
-    language: 'English',
-    level: 'advanced',
-    startDate: '2026-01-25',
-    startTime: '14:00',
-    sessionFrequency: 'weekly',
-    totalSessions: '8',
-    learningOutcomes: [
-      'Master advanced React patterns like HOCs and Render Props',
-      'Build reusable compound components',
-      'Understand performance optimization techniques',
-      'Implement custom hooks for complex logic'
-    ],
-    prerequisites: [
-      'Basic understanding of JavaScript and React',
-      'Familiarity with React Hooks'
-    ],
-    materials: [
-      'Laptop with VS Code installed',
-      'Node.js 18+ installed',
-      'Basic Git knowledge'
-    ],
-    thumbnail: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400',
+    title: '', description: '', category: '', price: '0', duration: '60',
+    maxStudents: '', language: '', level: 'beginner', startDate: '', startTime: '',
+    sessionFrequency: 'weekly', totalSessions: '1', learningOutcomes: [] as string[],
+    prerequisites: [] as string[], materials: [] as string[], thumbnail: '',
   };
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!id) { setError('Select a class to edit.'); setLoading(false); return; }
+    classService.getClass(id).then(c => {
+      if (c.instructor.id !== user?.id && user?.role !== 'admin') throw new Error('You can only edit your own classes.');
+      setFormData({ ...existingClass, title: c.title, description: c.description,
+        category: c.category, price: String(c.price), duration: String(c.duration),
+        maxStudents: c.maxStudents ? String(c.maxStudents) : '', language: c.language || '',
+        level: c.level.toLowerCase(), totalSessions: String(c.totalSessions),
+        startDate: c.startDate?.slice(0,10) || '', learningOutcomes: c.learningOutcomes || [],
+        prerequisites: c.prerequisites || [], materials: c.materials || [], thumbnail: c.thumbnail || '' });
+      setThumbnail(c.thumbnail || null);
+      setDetails(c.details || {});
+    }).catch(err => setError(getErrorMessage(err))).finally(() => setLoading(false));
+  }, [id, user?.id]);
 
   // Form state
   const [formData, setFormData] = useState(existingClass);
@@ -57,8 +54,8 @@ export default function EditClass() {
     'Business',
     'Photography',
     'Music',
-    'Health & Fitness',
-    'Language Learning',
+    'Health & Wellness',
+    'Languages',
     'Data Science',
     'Personal Development',
   ];
@@ -98,21 +95,30 @@ export default function EditClass() {
     }
   };
 
-  const handleSave = () => {
-    // TODO: Submit to backend
-    console.log('Updated class data:', formData);
-    alert('Class updated successfully! (Demo mode)');
-    setHasChanges(false);
-    navigate('/my-classes');
+  const handleSave = async () => {
+    if (!id) return;
+    setSaving(true); setError('');
+    try {
+      await classService.updateClass(id, {
+        details,
+        title: formData.title, description: formData.description, category: formData.category,
+        price: Number(formData.price), duration: Number(formData.duration),
+        totalSessions: Number(formData.totalSessions),
+        level: (formData.level.charAt(0).toUpperCase() + formData.level.slice(1)) as 'Beginner' | 'Intermediate' | 'Advanced',
+        language: formData.language, maxStudents: Number(formData.maxStudents) || undefined,
+        startDate: formData.startDate ? new Date(formData.startDate).toISOString() : undefined,
+        learningOutcomes: formData.learningOutcomes.filter(Boolean),
+        prerequisites: formData.prerequisites.filter(Boolean), materials: formData.materials.filter(Boolean),
+        thumbnail: thumbnail || '',
+      });
+      setHasChanges(false); navigate('/my-classes');
+    } catch (err) { setError(getErrorMessage(err)); } finally { setSaving(false); }
   };
 
-  const handleDelete = () => {
-    if (confirm('Are you sure you want to delete this class? This action cannot be undone.')) {
-      // TODO: Delete from backend
-      console.log('Delete class:', id);
-      alert('Class deleted successfully! (Demo mode)');
-      navigate('/my-classes');
-    }
+  const handleDelete = async () => {
+    if (!id || !confirm('Delete this class? This cannot be undone.')) return;
+    try { await classService.deleteClass(id); navigate('/my-classes'); }
+    catch (err) { setError(getErrorMessage(err)); }
   };
 
   const steps = [
@@ -121,11 +127,15 @@ export default function EditClass() {
     { number: 3, title: 'Content', description: 'Learning outcomes and materials' },
   ];
 
+  if (loading) return <BackendState title="Edit Class" loading message="Loading Nexnoon" />;
+  if (!formData.title && error) return <BackendState title="Edit Class" message={error} />;
+
   return (
     <div className="min-h-screen bg-white">
       <Header variant="light" />
       
       <main className="py-12">
+        {error && <p role="alert" className="text-red-600 w-[90vw] mx-auto">{error}</p>}
         <div className="w-[90vw] max-w-5xl mx-auto">
           {/* Header */}
           <div className="mb-8">
@@ -401,6 +411,7 @@ export default function EditClass() {
             {/* Step 3: Content */}
             {currentStep === 3 && (
               <div className="space-y-8">
+                <ClassDetailsEditor value={details} onChange={value => { setDetails(value); setHasChanges(true); }} />
                 <div>
                   <label className="block text-sm font-bold text-black mb-4 flex items-center gap-2">
                     <BookOpen className="h-5 w-5" />
@@ -510,7 +521,7 @@ export default function EditClass() {
 
               <Button
                 onClick={handleSave}
-                disabled={!hasChanges}
+                disabled={!hasChanges || saving}
                 className="bg-black text-white hover:bg-gray-800 rounded-none disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save className="h-4 w-4 mr-2" />

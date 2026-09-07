@@ -1,3 +1,4 @@
+import BrandLoader from '../components/BrandLoader';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
@@ -11,7 +12,6 @@ import { classService, getErrorMessage } from '@/lib/api';
 import { ENV } from '@/config/env';
 import { toast } from 'sonner';
 import type { Class } from '@/types/api';
-import { courseToApiClass, getCourseById } from '@/data/courses';
 
 function PaymentForm({
   classData,
@@ -63,7 +63,7 @@ function PaymentForm({
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
               <div className="bg-white rounded-xl border border-gray-200 p-8">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Payment</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Enrollment</h2>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
                   <Input
@@ -81,7 +81,7 @@ function PaymentForm({
                 >
                   {isProcessing ? 'Processing...' : `Complete Payment • ${formatPrice(classData.price)}`}
                 </Button>
-                <p className="text-center text-gray-500 text-sm mt-4">30-day money-back guarantee</p>
+                <p className="text-center text-gray-500 text-sm mt-4">Your enrollment is saved to your account.</p>
               </div>
             </div>
             <div className="lg:col-span-1">
@@ -121,7 +121,7 @@ function PaymentForm({
 export default function Payment() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [classData, setClassData] = useState<Class | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -134,16 +134,6 @@ export default function Payment() {
   useEffect(() => {
     if (!classId) {
       setLoadError('Class ID is required.');
-      return;
-    }
-    if (useDemoData) {
-      const course = getCourseById(classId);
-      if (course) {
-        setClassData(courseToApiClass(course) as Class);
-        setLoadError(null);
-      } else {
-        setLoadError('Class not found');
-      }
       return;
     }
     let cancelled = false;
@@ -159,22 +149,17 @@ export default function Payment() {
   }, [classId, useDemoData]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!authLoading && !isAuthenticated) {
       sessionStorage.setItem('returnPath', `/payment/${id}`);
       navigate('/login');
     }
-  }, [isAuthenticated, id, navigate]);
+  }, [authLoading, isAuthenticated, id, navigate]);
 
   const handlePayNoStripe = async () => {
     if (!classData || !classId) return;
     setIsProcessing(true);
     setPaymentError('');
     try {
-      if (useDemoData) {
-        toast.success('Enrollment successful!');
-        navigate(`/enrollment-success/${id}`);
-        return;
-      }
       await classService.enrollInClass({ classId, paymentMethodId: undefined });
       toast.success('Enrollment successful!');
       navigate(`/enrollment-success/${id}`);
@@ -193,8 +178,7 @@ export default function Payment() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-[#889dd1] border-r-transparent mb-4" />
-          <p className="text-gray-600">Loading class...</p>
+          <BrandLoader />
         </div>
       </div>
     );

@@ -1,5 +1,8 @@
 # Dependencies
 node_modules/
+.npm-cache/
+.local-data/
+.mongodb-binaries/
 dist/
 
 # Environment variables

@@ -1,17 +1,18 @@
+import BrandLoader from '@/app/components/BrandLoader';
 import { useState, useEffect } from "react";
 import { Clock, Users, Star, Heart, MapPin } from "lucide-react";
 import { useNavigate } from "react-router";
 import { classDetailUrl } from "@/lib/url";
 import { Button } from "@/app/components/ui/button";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
-import { allCourses, type Course } from "@/data/courses";
+
 import { classService } from "@/lib/api";
 import { ENV } from "@/config/env";
 import type { Class } from "@/types/api";
 
-type CourseCard = Omit<Course, 'id'> & { id: string | number; duration?: string };
+type CourseCard = { id: string; title: string; instructor: string; location: string; date: string; time: string; participants: number; price: number; currency: string; category: string; image: string; duration: string };
 function formatDuration(minutes?: number): string {
-  if (!minutes || minutes <= 0) return '4 weeks';
+  if (!minutes || minutes <= 0) return 'Not specified';
   if (minutes >= 60) {
     const hours = Math.round(minutes / 60);
     return `${hours} hr${hours === 1 ? '' : 's'}`;
@@ -29,6 +30,7 @@ function apiClassToCourse(c: Class & { _id?: string }): CourseCard {
     time: '',
     participants: c.enrolledStudents || 0,
     price: c.price,
+    currency: c.currency || "USD",
     category: c.category,
     image: c.thumbnail || 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=800',
     duration: formatDuration(c.duration),
@@ -43,29 +45,35 @@ interface LiveClassesProps {
   showTitle?: boolean;
   selectedCategory?: string;
   limit?: number;
+  priceRange?: 'all' | 'free' | 'paid';
   showLoadMore?: boolean;
 }
 
-export default function LiveClasses({ title = "Featured Classes", subtitle, variant = "default", showBorderHover = false, showTitle = true, selectedCategory = "All", limit, showLoadMore = false }: LiveClassesProps) {
+export default function LiveClasses({ title = "Featured Classes", subtitle, variant = "default", showBorderHover = false, showTitle = true, selectedCategory = "All", limit, showLoadMore = false, priceRange = 'all' }: LiveClassesProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [displayCount, setDisplayCount] = useState(32);
   const [apiClasses, setApiClasses] = useState<CourseCard[]>([]);
-  const useRealData = !ENV.ENABLE_DEMO_MODE;
+  const useRealData = true;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!useRealData) return;
+    setLoading(true); setError('');
     classService.getClasses({ pageSize: 100 })
       .then((res) => setApiClasses((res.data || []).map(apiClassToCourse).filter((card) => card.id != null && card.id !== '')))
-      .catch(() => setApiClasses([]));
-  }, [useRealData]);
+      .catch(() => { setApiClasses([]); setError('Unable to load classes. Check the backend connection and try again.'); })
+      .finally(() => setLoading(false));
+  }, [useRealData, retry]);
 
-  const liveClasses: CourseCard[] = useRealData ? apiClasses : allCourses;
+  const liveClasses = apiClasses.filter(c => priceRange === "all" || (priceRange === "free" ? c.price === 0 : c.price > 0));
 
   // Filter classes by category
   const filteredClasses = selectedCategory === "All"
     ? liveClasses
     : liveClasses.filter(cls => cls.category === selectedCategory);
-  
+
   // If limit is provided, use it; otherwise use displayCount for load more functionality
   const cardsToShow = limit || (showLoadMore ? displayCount : filteredClasses.length);
   const cardsPerPage = limit || 40;
@@ -79,7 +87,7 @@ export default function LiveClasses({ title = "Featured Classes", subtitle, vari
     setCurrentIndex((prev) => (prev - 1 + totalPages) % totalPages);
   };
 
-  const currentClasses = limit 
+  const currentClasses = limit
     ? filteredClasses.slice(currentIndex * cardsPerPage, (currentIndex + 1) * cardsPerPage)
     : filteredClasses.slice(0, cardsToShow);
 
@@ -104,17 +112,17 @@ export default function LiveClasses({ title = "Featured Classes", subtitle, vari
                   <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
                 )}
               </div>
-              
+
               {/* View All Link */}
-              <a 
-                href="#" 
+              <a
+                href="/browse"
                 className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-[#889dd1] transition-colors group"
               >
                 <span>View All</span>
-                <svg 
-                  className="h-4 w-4 transition-transform group-hover:translate-x-1" 
-                  fill="none" 
-                  stroke="currentColor" 
+                <svg
+                  className="h-4 w-4 transition-transform group-hover:translate-x-1"
+                  fill="none"
+                  stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -123,6 +131,9 @@ export default function LiveClasses({ title = "Featured Classes", subtitle, vari
             </div>
           )}
 
+          {loading && <BrandLoader />}
+          {error && <div role="alert" className="py-8 text-red-700">{error} <button className="underline" onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
+          {!loading && !error && !filteredClasses.length && <p className="py-8 text-gray-600">No classes found. Published instructor classes will appear here.</p>}
           {/* Classes Grid with Navigation Arrows */}
           <div className="relative">
             {/* Grid */}
@@ -149,7 +160,7 @@ export default function LiveClasses({ title = "Featured Classes", subtitle, vari
                       <span className="px-2.5 py-1.5 rounded-full bg-white/40 text-dark text-[11px] font-semibold tracking-wide backdrop-blur-sm">
                         Live Class
                       </span>
-                      <button 
+                      <button
                         onClick={(e) => e.stopPropagation()}
                         className="p-2 rounded-full bg-white/40 backdrop-blur-sm hover:bg-white/60 transition-colors"
                       >
@@ -171,17 +182,17 @@ export default function LiveClasses({ title = "Featured Classes", subtitle, vari
                       </div>
                       <span className="inline-flex items-center gap-1 text-[12px] text-gray-500 flex-shrink-0">
                         <Clock className="h-3.5 w-3.5" />
-                        {liveClass.duration || '4 weeks'}
+                        {liveClass.duration}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-xl font-semibold text-gray-900 text-[15px]">€{liveClass.price.toFixed(2)}</p>
+                        <p className="text-xl font-semibold text-gray-900 text-[15px]">{liveClass.price === 0 ? 'Free' : new Intl.NumberFormat(undefined, { style: 'currency', currency: liveClass.currency }).format(liveClass.price)}</p>
                       </div>
                       <div className="flex items-center text-sm text-gray-500">
                         <Heart className="h-4 w-4 mr-1" />
-                        <span>(0)</span>
+                        <span>{liveClass.participants} enrolled</span>
                       </div>
                     </div>
                   </div>

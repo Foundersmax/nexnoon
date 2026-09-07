@@ -11,7 +11,7 @@ export const ENV = {
   APP_VERSION: '1.0.0',
   
   // Feature Flags (set VITE_ENABLE_DEMO_MODE / VITE_ENABLE_ANALYTICS in .env)
-  ENABLE_DEMO_MODE: import.meta.env.VITE_ENABLE_DEMO_MODE !== 'false',
+  ENABLE_DEMO_MODE: false,
   ENABLE_ANALYTICS: import.meta.env.VITE_ENABLE_ANALYTICS === 'true',
   
   // Stripe (publishable key only - safe for frontend)
