@@ -1,9 +1,14 @@
 // Environment configuration
 // In production, these should come from environment variables
 
+const configuredApiUrl = import.meta.env.VITE_API_BASE_URL;
+const apiUrl = import.meta.env.PROD && (!configuredApiUrl || /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(configuredApiUrl))
+  ? 'https://nexnoon-backend.onrender.com/v1'
+  : configuredApiUrl || 'http://localhost:4000/v1';
+
 export const ENV = {
   // API Configuration
-  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/v1',
+  API_BASE_URL: apiUrl,
   API_TIMEOUT: 30000,
   
   // App Configuration

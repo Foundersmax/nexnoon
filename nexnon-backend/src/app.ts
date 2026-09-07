@@ -19,7 +19,7 @@ const app = express();
 const isProd = ENV.NODE_ENV === 'production';
 app.use(
   cors({
-    origin: isProd ? ENV.FRONTEND_URL : true, // true = reflect request origin in dev
+    origin: isProd ? ENV.FRONTEND_URL.replace(/\/+$/, '') : true, // true = reflect request origin in dev
     credentials: true,
   })
 );
