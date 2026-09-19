@@ -1,5 +1,5 @@
 import ClassDetailsEditor from '@/app/components/ClassDetailsEditor';
-import type { ClassDetails } from '@/types/api';
+import type { ClassDetails, ClassSchedule } from '@/types/api';
 import { classService, getErrorMessage } from '@/lib/api';
 import BackendState from '@/app/components/BackendState';
 import { useState, useEffect } from 'react';
@@ -10,11 +10,89 @@ import Footer from '@/app/components/Footer';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUpdateClass, useClassSchedule, useUpdateSession } from '@/hooks/api/useClasses';
+
+/** Splits an ISO timestamp into separate local date/time strings for <input> fields. */
+function splitDateTime(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+const sessionStatusBadge: Record<ClassSchedule['status'], string> = {
+  live: 'bg-red-100 text-red-700',
+  scheduled: 'bg-blue-100 text-blue-700',
+  completed: 'bg-gray-100 text-gray-600',
+  cancelled: 'bg-gray-100 text-gray-400',
+};
+
+/** One session's row in the reschedule list: edits its date/time while keeping its duration. */
+function SessionScheduleRow({ classId, session }: { classId: string; session: ClassSchedule }) {
+  const updateSession = useUpdateSession(classId);
+  const initial = splitDateTime(session.startTime);
+  const [date, setDate] = useState(initial.date);
+  const [time, setTime] = useState(initial.time);
+  const editable = session.status === 'scheduled';
+  const changed = date !== initial.date || time !== initial.time;
+
+  const handleSave = async () => {
+    const newStart = new Date(`${date}T${time}`);
+    if (Number.isNaN(newStart.getTime())) return;
+    const durationMs = new Date(session.endTime).getTime() - new Date(session.startTime).getTime();
+    const newEnd = new Date(newStart.getTime() + durationMs);
+    await updateSession.mutateAsync({
+      sessionId: session.id,
+      data: { startTime: newStart.toISOString(), endTime: newEnd.toISOString() },
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border border-gray-200 rounded-lg p-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-gray-900 truncate">{session.title}</p>
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${sessionStatusBadge[session.status]}`}>
+            {session.status}
+          </span>
+        </div>
+      </div>
+      <Input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        disabled={!editable}
+        aria-label={`${session.title} date`}
+        className="w-auto border-gray-300 rounded-lg disabled:opacity-50"
+      />
+      <Input
+        type="time"
+        value={time}
+        onChange={(e) => setTime(e.target.value)}
+        disabled={!editable}
+        aria-label={`${session.title} time`}
+        className="w-auto border-gray-300 rounded-lg disabled:opacity-50"
+      />
+      <Button
+        onClick={handleSave}
+        disabled={!editable || !changed || updateSession.isPending}
+        size="sm"
+        className="bg-black text-white hover:bg-gray-800 rounded-lg disabled:opacity-50"
+      >
+        {updateSession.isPending ? 'Saving...' : 'Save'}
+      </Button>
+    </div>
+  );
+}
 
 export default function EditClass() {
   const { id } = useParams();
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const updateClass = useUpdateClass(id || '');
+  const { data: sessions } = useClassSchedule(id || '');
   const [currentStep, setCurrentStep] = useState(1);
   const [details, setDetails] = useState<ClassDetails>({});
 
@@ -99,7 +177,7 @@ export default function EditClass() {
     if (!id) return;
     setSaving(true); setError('');
     try {
-      await classService.updateClass(id, {
+      await updateClass.mutateAsync({
         details,
         title: formData.title, description: formData.description, category: formData.category,
         price: Number(formData.price), duration: Number(formData.duration),
@@ -405,6 +483,22 @@ export default function EditClass() {
                     />
                   </div>
                 </div>
+
+                {!!sessions?.length && (
+                  <div className="pt-6 border-t border-gray-200">
+                    <label className="block text-sm font-bold text-black mb-1">
+                      SESSION SCHEDULE
+                    </label>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Reschedule an upcoming session. Its duration stays the same; only the start date and time change.
+                    </p>
+                    <div className="space-y-3">
+                      {sessions.map((s) => (
+                        <SessionScheduleRow key={s.id} classId={id!} session={s} />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

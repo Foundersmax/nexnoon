@@ -15,7 +15,10 @@ export const ENV = {
   APP_NAME: 'Nexnoon',
   APP_VERSION: '1.0.0',
   
-  // Feature Flags (set VITE_ENABLE_DEMO_MODE / VITE_ENABLE_ANALYTICS in .env)
+  // Feature Flags
+  // Demo mode (mock-data fallback for pages with no backend) is permanently off:
+  // this app now always talks to the real API, so every page needs a reachable,
+  // seeded backend rather than silently falling back to fake data mid-demo.
   ENABLE_DEMO_MODE: false,
   ENABLE_ANALYTICS: import.meta.env.VITE_ENABLE_ANALYTICS === 'true',
   

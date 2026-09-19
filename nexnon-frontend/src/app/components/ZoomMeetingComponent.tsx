@@ -144,7 +144,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         return;
       }
 
-      const { signature, meetingNumber, passWord, userName: displayName, userEmail } = response.data.data;
+      const { signature, meetingNumber, passWord, userName: displayName, userEmail, zak } = response.data.data;
 
       if (!containerRef.current || !wrapperRef.current) {
         setError('init-failed');
@@ -198,13 +198,20 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
           password: passWord,
           userName: displayName || userName,
           userEmail: userEmail || '',
+          ...(zak ? { zak } : {}),
         });
 
         setState('ready');
       } catch (sdkError: any) {
         console.error('Zoom SDK error:', sdkError?.type, sdkError?.reason, sdkError);
-        const reason = typeof sdkError?.reason === 'string' ? sdkError.reason : '';
-        setError(reason.toLowerCase().includes('ended') ? 'meeting-ended' : 'init-failed');
+        const reason = typeof sdkError?.reason === 'string' ? sdkError.reason.toLowerCase() : '';
+        if (reason.includes('ended')) {
+          setError('meeting-ended');
+        } else if (reason.includes('not started')) {
+          setError('too-early');
+        } else {
+          setError('init-failed');
+        }
         setState('error');
       }
     } catch (err: any) {
@@ -262,7 +269,10 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         <div ref={containerRef} className="absolute inset-0" />
 
         {state === 'waiting' && error === 'too-early' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
+          // Opaque background: the SDK can leave a partial "waiting" panel of its own
+          // mounted in the zoomAppRoot container beneath this; without an opaque fill
+          // here, that stray SDK content shows through around our centered message.
+          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
             <div className="w-16 h-16 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center mb-4 flex-shrink-0">
               <Clock className="h-7 w-7 text-blue-300" />
             </div>
@@ -274,7 +284,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         )}
 
         {state === 'waiting' && !error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
+          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
             <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-4 flex-shrink-0">
               <Video className="h-7 w-7 text-white" />
             </div>
@@ -304,14 +314,14 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         )}
 
         {state === 'loading' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
+          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
             <div className="animate-spin motion-reduce:animate-none h-8 w-8 border-2 border-white/30 border-t-white rounded-full" aria-hidden="true" />
             <span className="text-white/70 text-sm">Securely preparing your classroom&hellip;</span>
           </div>
         )}
 
         {state === 'error' && error === 'meeting-ended' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" role="status" aria-live="polite">
+          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6" role="status" aria-live="polite">
             <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-4">
               <Video className="h-7 w-7 text-white/70" aria-hidden="true" />
             </div>
@@ -327,7 +337,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         )}
 
         {state === 'error' && error && error !== 'meeting-ended' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" role="alert" aria-live="polite">
+          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6" role="alert" aria-live="polite">
             <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-400/30 flex items-center justify-center mb-4">
               <AlertCircle className="h-7 w-7 text-red-300" aria-hidden="true" />
             </div>

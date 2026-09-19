@@ -70,10 +70,11 @@ export function useMyClasses(params?: RequestParams) {
 /**
  * Get my enrollments (student)
  */
-export function useMyEnrollments(params?: RequestParams) {
+export function useMyEnrollments(params?: RequestParams, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: CLASS_KEYS.myEnrollments(),
     queryFn: () => classService.getUserEnrollments(params),
+    enabled: options?.enabled ?? true,
   });
 }
 

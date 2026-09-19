@@ -10,11 +10,15 @@ import BackendState from '@/app/components/BackendState';
 import { CountdownTimer } from '@/app/components/CountdownTimer';
 import { classService } from '@/lib/api';
 import { classDetailUrl, slugify } from '@/lib/url';
+import { useAuth } from '@/contexts/AuthContext';
+import { useMyEnrollments } from '@/hooks/api/useClasses';
 import type { Class, Review } from '@/types/api';
 const heroBackground = "https://images.unsplash.com/photo-1572044162444-ad60f128bdea?w=1080";
 export default function ClassDetail() {
   const { id, titleSlug } = useParams();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const { data: myEnrollments } = useMyEnrollments({ pageSize: 100 }, { enabled: isAuthenticated });
   const [apiClass, setApiClass] = useState<Class | null>(null);
   const [error, setError] = useState('');
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -41,6 +45,7 @@ export default function ClassDetail() {
   const classData = { ...apiClass, students: apiClass.enrolledStudents, duration: apiClass.totalSessions, durationBase: 'Sessions', format: apiClass.isLive ? 'Live' : 'Online', startDate: apiClass.startDate || apiClass.schedule?.[0]?.startTime || '', instructor: { ...apiClass.instructor, title: details.instructorTitle || 'Nexnoon Expert', bio: details.instructorBio || apiClass.instructor.bio || 'The instructor has not added a biography yet.', image: details.instructorImage || apiClass.instructor.avatar || '' } };
   const modules = details.curriculum?.length ? details.curriculum : (apiClass.schedule || []).map(s => ({ title: s.title, topics: s.description ? [s.description] : [new Date(s.startTime).toLocaleString()], project: 'Project details to be provided by the instructor.' }));
   const paymentId = apiClass.id;
+  const activeEnrollment = myEnrollments?.data.find(e => e.classId === apiClass.id && e.status !== 'dropped');
   const formatPrice = (price: number) => price === 0 ? 'Free' : new Intl.NumberFormat(undefined, { style: 'currency', currency: apiClass.currency || 'USD' }).format(price);
   const formatDate = (value: string) => value ? new Date(value).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'To be announced';
     return (
@@ -131,12 +136,22 @@ export default function ClassDetail() {
                         </div>
                       </div>
 
-                      <Button
-                        onClick={() => navigate(`/payment/${paymentId}`)}
-                        className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl text-sm font-semibold mb-3 shadow-lg hover:shadow-xl transition-all"
-                      >
-                        Enroll Now
-                      </Button>
+                      {activeEnrollment ? (
+                        <Button
+                          onClick={() => navigate(`/classroom/${apiClass.id}`)}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-semibold mb-3 shadow-lg hover:shadow-xl transition-all"
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Already Enrolled &middot; Go to Classroom
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => navigate(`/payment/${paymentId}`)}
+                          className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl text-sm font-semibold mb-3 shadow-lg hover:shadow-xl transition-all"
+                        >
+                          Enroll Now
+                        </Button>
+                      )}
 
                       <div className="border-t border-gray-100 mb-3"></div>
 

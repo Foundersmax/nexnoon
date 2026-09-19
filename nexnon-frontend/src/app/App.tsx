@@ -3,6 +3,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { ErrorBoundary } from "@/app/components/ErrorBoundary";
+import { RouteErrorBoundary } from "@/app/components/RouteErrorBoundary";
 import { ScrollToTop } from "@/app/components/ScrollToTop";
 import { Layout } from "@/app/components/Layout";
 import Header from "@/app/components/Header";
@@ -155,6 +156,7 @@ function Home() {
 const router = createBrowserRouter([
   {
     element: <Layout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         path: "/browse",
@@ -243,7 +245,6 @@ const router = createBrowserRouter([
       {
         path: "/live-session/:id",
         element: <Suspense fallback={<LoadingFallback />}><LiveSession /></Suspense>,
-        errorElement: <Suspense fallback={<LoadingFallback />}><NotFound /></Suspense>,
       },
       {
         path: "/login",

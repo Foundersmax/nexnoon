@@ -4,6 +4,7 @@ import Header from '@/app/components/Header';
 import Footer from '@/app/components/Footer';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
+import { apiClient, getErrorMessage } from '@/lib/api';
 
 export default function Contact() {
   const [formData, setFormData] = useState({
@@ -13,12 +14,22 @@ export default function Contact() {
     message: ''
   });
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Replace with actual API call
-    setSubmitted(true);
-    setFormData({ name: '', email: '', subject: '', message: '' });
+    setIsSubmitting(true);
+    setSubmitError('');
+    try {
+      await apiClient.post('/contact', formData);
+      setSubmitted(true);
+      setFormData({ name: '', email: '', subject: '', message: '' });
+    } catch (err) {
+      setSubmitError(getErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -41,6 +52,12 @@ export default function Contact() {
               {submitted && (
                 <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
                   Thank you! We'll get back to you soon.
+                </div>
+              )}
+
+              {submitError && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                  {submitError}
                 </div>
               )}
 
@@ -98,9 +115,9 @@ export default function Contact() {
                   />
                 </div>
 
-                <Button type="submit" className="w-full bg-black text-white hover:bg-black/90 h-11">
+                <Button type="submit" disabled={isSubmitting} className="w-full bg-black text-white hover:bg-black/90 h-11">
                   <Send className="h-4 w-4 mr-2" />
-                  Send Message
+                  {isSubmitting ? 'Sending...' : 'Send Message'}
                 </Button>
               </form>
             </div>

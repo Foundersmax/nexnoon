@@ -107,7 +107,9 @@ export default function MyClasses() {
             return;
           }
           const classes = await Promise.all(
-            enrollments.map((e: Enrollment) => classService.getClass(e.classId))
+            enrollments.map((e: Enrollment) =>
+              classService.getClass(e.classId).catch(() => null)
+            )
           );
           const now = new Date();
           const enrolled: EnrolledCard[] = [];

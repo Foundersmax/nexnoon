@@ -149,49 +149,78 @@ export default function BackendClassroom({ view }: { view: View }) {
 
       <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 sm:p-8">
         {view === 'classroom' && <>
-          <p className="whitespace-pre-line text-gray-600 mb-6">{cls.description}</p>
-
-          {/* Virtual meeting room */}
-          <div className="mb-8">
-            <LiveClassHeader classId={classId!} courseTitle={cls.title} instructorName={cls.instructor.name} session={session} />
-            {session?.zoomMeetingId ? (
-              <ZoomMeetingComponent
-                classId={classId!}
-                session={session}
-                userName={user?.name || 'Student'}
-                instructorName={cls.instructor.name}
-                isEnrolled={!canTeach && enrollment?.status === 'active'}
-              />
-            ) : (
-              <div className="rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900 to-black p-10 text-center">
-                <p className="text-white/60 text-sm">
-                  {session ? 'The instructor has not provided a meeting link for this session yet.' : 'No upcoming session has been scheduled.'}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* All sessions */}
-          <h2 className="text-lg font-bold text-gray-900 mb-3">All Sessions</h2>
-          {!sessions.length && <p className="text-gray-500">No sessions have been scheduled yet.</p>}
-          <div className="space-y-3">
-            {sessions.map(s => (
-              <div key={s.id} className="flex flex-wrap items-center justify-between gap-4 border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold text-gray-900 truncate">{s.title}</h3>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${statusBadge[s.status]}`}>{s.status}</span>
-                  </div>
-                  <p className="text-sm text-gray-500 flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5" /> {date(s.startTime)}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            {/* Meeting */}
+            <div className="lg:col-span-2 min-w-0">
+              <LiveClassHeader classId={classId!} courseTitle={cls.title} instructorName={cls.instructor.name} session={session} />
+              {session?.zoomMeetingId ? (
+                <ZoomMeetingComponent
+                  classId={classId!}
+                  session={session}
+                  userName={user?.name || 'Student'}
+                  instructorName={cls.instructor.name}
+                  isEnrolled={!canTeach && enrollment?.status === 'active'}
+                />
+              ) : (
+                <div className="rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900 to-black p-10 text-center">
+                  <p className="text-white/60 text-sm">
+                    {session ? 'The instructor has not provided a meeting link for this session yet.' : 'No upcoming session has been scheduled.'}
                   </p>
                 </div>
-                <div className="flex gap-4 flex-shrink-0 text-sm">
-                  {s.status !== 'cancelled' && <Link className="text-[#889dd1] font-medium hover:underline" to={`/live-session/${classId}?sessionId=${s.id}`}>Session details</Link>}
-                  {safeUrl(s.recordingUrl) && <Link className="text-gray-600 font-medium hover:underline" to={`/recorded-class/${classId}?sessionId=${s.id}`}>Watch recording</Link>}
+              )}
+            </div>
+
+            {/* Course content sidebar */}
+            <aside className="lg:col-span-1 min-w-0">
+              <div className="border border-gray-200 rounded-2xl overflow-hidden sticky top-6">
+                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <h2 className="text-sm font-bold text-gray-900">Course Content</h2>
+                  <p className="text-xs text-gray-500">{sessions.length} session{sessions.length === 1 ? '' : 's'}</p>
+                </div>
+                <div className="lg:max-h-[520px] lg:overflow-y-auto divide-y divide-gray-100">
+                  {!sessions.length && <p className="text-sm text-gray-500 p-4">No sessions have been scheduled yet.</p>}
+                  {sessions.map(s => {
+                    const isActive = session?.id === s.id;
+                    return (
+                      <div key={s.id} className={`px-4 py-3 transition-colors ${isActive ? 'bg-[#889dd1]/10' : 'hover:bg-gray-50'}`}>
+                        <Link to={`/classroom/${classId}?sessionId=${s.id}`} className="flex items-start gap-3">
+                          <span className="mt-0.5 flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                            {s.status === 'completed' ? (
+                              <CheckCircle2 className="h-5 w-5 text-[#889dd1]" />
+                            ) : s.status === 'live' ? (
+                              <span className="relative flex h-3 w-3" aria-hidden="true">
+                                <span className="animate-ping motion-reduce:hidden absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600" />
+                              </span>
+                            ) : (
+                              <span className={`block w-4 h-4 rounded-full border-2 ${s.status === 'cancelled' ? 'border-gray-200' : 'border-gray-300'}`} />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className={`block text-sm font-medium truncate ${isActive ? 'text-[#5a6bab]' : s.status === 'cancelled' ? 'text-gray-400' : 'text-gray-900'}`}>
+                              {s.title}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-xs text-gray-500 mt-0.5">
+                              <Calendar className="h-3 w-3" /> {date(s.startTime)}
+                            </span>
+                          </span>
+                        </Link>
+                        {safeUrl(s.recordingUrl) && (
+                          <Link to={`/recorded-class/${classId}?sessionId=${s.id}`} className="inline-block text-xs text-[#889dd1] hover:underline mt-1.5 ml-8">
+                            Watch recording
+                          </Link>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
+            </aside>
+          </div>
+
+          <div className="border-t border-gray-100 pt-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">About this class</h2>
+            <p className="whitespace-pre-line text-gray-600">{cls.description}</p>
           </div>
         </>}
         {view === 'materials' && <>{!cls.materials?.length && <p>No materials have been added by the instructor.</p>}{cls.materials?.map((item,index)=><div className="border-b py-4" key={index}>{safeUrl(item) ? <a href={safeUrl(item)} target="_blank" rel="noopener noreferrer" className="underline">{item}</a> : <p>{item}</p>}</div>)}</>}
