@@ -1,5 +1,6 @@
 .claude
 .claude/
-DEPLOY_TESTING
-codebasestate
-RUN
+
+# Ignore all markdown docs except the top-level README
+*.md
+!/README.md
