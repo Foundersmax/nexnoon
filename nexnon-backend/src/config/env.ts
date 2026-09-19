@@ -28,10 +28,14 @@ export const ENV = {
   // Frontend URL for links in emails
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
 
-  // Zoom (optional - for automatic meeting creation)
+  // Zoom Server-to-Server OAuth (optional - for automatic meeting creation)
   ZOOM_ACCOUNT_ID: process.env.ZOOM_ACCOUNT_ID || '',
   ZOOM_CLIENT_ID: process.env.ZOOM_CLIENT_ID || '',
   ZOOM_CLIENT_SECRET: process.env.ZOOM_CLIENT_SECRET || '',
+
+  // Zoom Meeting SDK (optional - for embedded student joining)
+  ZOOM_MEETING_SDK_CLIENT_ID: process.env.ZOOM_MEETING_SDK_CLIENT_ID || '',
+  ZOOM_MEETING_SDK_CLIENT_SECRET: process.env.ZOOM_MEETING_SDK_CLIENT_SECRET || '',
 };
 
 

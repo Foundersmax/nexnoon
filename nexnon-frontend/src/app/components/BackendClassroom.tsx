@@ -6,6 +6,7 @@ import type { Class, ClassSchedule, Enrollment } from '@/types/api';
 import Header from './Header';
 import Footer from './Footer';
 import BackendState from './BackendState';
+import ZoomMeetingComponent from './ZoomMeetingComponent';
 
 type Workspace = { class: Class; sessions: ClassSchedule[]; enrollment: Enrollment | null; canTeach: boolean };
 const date = (value?: string) => value ? new Date(value).toLocaleString() : 'Not scheduled';
@@ -33,7 +34,6 @@ export default function BackendClassroom({ view }: { view: 'classroom' | 'materi
     ? sessions.find(s => s.recordingUrl)
     : sessions.find(s => s.status === 'live') || sessions.find(s => s.status !== 'cancelled' && new Date(s.endTime).getTime() > now);
   const seconds = session ? Math.max(0, Math.ceil((new Date(session.startTime).getTime() - now) / 1000)) : 0;
-  const meetingUrl = safeUrl(session?.zoomLink);
   const recordingUrl = safeUrl(session?.recordingUrl);
   const certificateUrl = enrollment?.status === 'completed' ? safeUrl(enrollment.certificateUrl) : undefined;
   return <div className="min-h-screen flex flex-col bg-gray-50"><Header />
@@ -53,8 +53,7 @@ export default function BackendClassroom({ view }: { view: 'classroom' | 'materi
         {view === 'assignments' && <>{!cls.assignments?.length && <p>No assignments have been added by the instructor.</p>}{cls.assignments?.map((a,index)=><article className="border rounded p-4 mb-4" key={index}><h3 className="font-bold">{a.title}</h3><p>{a.description}</p><p>Due: {date(a.dueDate)}</p></article>)}</>}
         {view === 'recording' && <>{recordingUrl ? <><h3 className="font-bold mb-4">{session?.title}</h3><video className="w-full rounded-lg bg-black" controls src={recordingUrl} /><a className="underline block mt-4" href={recordingUrl} target="_blank" rel="noopener noreferrer">Open recording</a></> : <p>No recording is available for this session yet.</p>}</>}
         {(view === 'live' || view === 'waiting') && <>{session ? <><h3 className="font-bold mb-3">{session.title}</h3><p>{date(session.startTime)}</p><p className="my-3">{seconds > 0 ? `Starts in ${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m ${seconds % 60}s` : `Session status: ${session.status}`}</p>
-          {meetingUrl && session.status !== 'cancelled' ? <><a href={meetingUrl} target="_blank" rel="noopener noreferrer" className="inline-block bg-black text-white px-6 py-3 rounded-lg my-4">Open live meeting</a>{session.zoomMeetingId && <p>Meeting ID: {session.zoomMeetingId}</p>}{session.zoomPasscode && <p>Passcode: {session.zoomPasscode}</p>}</> : <p>The instructor has not provided a meeting link yet.</p>}
-          <p className="mt-4 text-gray-600">Chat and device controls are available inside the live meeting.</p></> : <p>No upcoming session has been scheduled.</p>}</>}
+          {session.zoomMeetingId ? <ZoomMeetingComponent classId={classId!} session={session} userName={user?.name || 'Student'} /> : <p>The instructor has not provided a meeting link yet.</p>}</> : <p>No upcoming session has been scheduled.</p>}</>}
         {view === 'certificate' && <>{certificateUrl ? <a className="underline" href={certificateUrl} target="_blank" rel="noopener noreferrer">Open your certificate</a> : <p>No certificate has been issued for this enrollment yet.</p>}</>}
       </section>
     </main><Footer /></div>;

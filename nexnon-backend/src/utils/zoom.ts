@@ -1,4 +1,5 @@
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
 import { ENV } from '../config/env';
 
 interface CreateZoomMeetingInput {
@@ -68,4 +69,31 @@ export const createZoomMeeting = async (
   return meetingResponse.data;
 };
 
+export interface ZoomMeetingSDKSignatureInput {
+  meetingNumber: string | number;
+  role?: 0 | 1;
+}
 
+export const generateZoomMeetingSDKSignature = (
+  input: ZoomMeetingSDKSignatureInput
+): string => {
+  const { ZOOM_MEETING_SDK_CLIENT_ID, ZOOM_MEETING_SDK_CLIENT_SECRET } = ENV;
+
+  if (!ZOOM_MEETING_SDK_CLIENT_ID || !ZOOM_MEETING_SDK_CLIENT_SECRET) {
+    throw new Error('Zoom Meeting SDK credentials not configured');
+  }
+
+  const expirationSeconds = 60 * 60; // 1 hour
+  const timestamp = Math.floor(Date.now() / 1000);
+  const expirationTime = timestamp + expirationSeconds;
+
+  const payload = {
+    appKey: ZOOM_MEETING_SDK_CLIENT_ID,
+    mn: input.meetingNumber.toString(),
+    role: input.role ?? 0,
+    iat: timestamp,
+    exp: expirationTime,
+  };
+
+  return jwt.sign(payload, ZOOM_MEETING_SDK_CLIENT_SECRET, { algorithm: 'HS256' });
+};

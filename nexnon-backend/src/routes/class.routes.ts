@@ -6,7 +6,8 @@ import { ClassModel, ClassScheduleModel } from '../models/Class';
 import { EnrollmentModel } from '../models/Enrollment';
 import { ReviewModel } from '../models/Review';
 import { requireAuth, requireRole, AuthRequest } from '../middleware/auth';
-import { createZoomMeeting } from '../utils/zoom';
+import { createZoomMeeting, generateZoomMeetingSDKSignature } from '../utils/zoom';
+import { ENV } from '../config/env';
 
 const router = Router();
 router.use((req: AuthRequest, res, next) => {
@@ -302,6 +303,81 @@ router.post('/', requireAuth, requireRole('instructor', 'admin'), async (req: Au
     data: normalizeClass(cls),
     message: 'Class created successfully',
   });
+});
+
+router.post('/:classId/sessions/:sessionId/join-credentials', requireAuth, async (req: AuthRequest, res) => {
+  // Validate IDs
+  if (!isValidObjectId(req.params.classId) || !isValidObjectId(req.params.sessionId)) {
+    return res.status(400).json({ success: false, message: 'Invalid class or session ID' });
+  }
+
+  // Load session and class
+  const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.classId });
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+
+  const cls = await ClassModel.findById(req.params.classId);
+  if (!cls) {
+    return res.status(404).json({ success: false, message: 'Class not found' });
+  }
+
+  // Check if meeting exists
+  if (!session.zoomMeetingId) {
+    return res.status(409).json({ success: false, message: 'Meeting not available for this session' });
+  }
+
+  // Enforce join window: 15 minutes before start until session ends
+  const now = Date.now();
+  const startTime = new Date(session.startTime).getTime();
+  const endTime = new Date(session.endTime).getTime();
+  const fifteenMinutes = 15 * 60 * 1000;
+
+  if (now < startTime - fifteenMinutes) {
+    return res.status(409).json({ success: false, message: 'Session has not started yet' });
+  }
+
+  if (session.status === 'cancelled' || session.status === 'completed') {
+    return res.status(409).json({ success: false, message: `Session is ${session.status}` });
+  }
+
+  // Authorize: instructor/admin or enrolled student
+  const isInstructor = req.user!.role === 'instructor' && String(cls.instructor.id) === req.user!.id;
+  const isAdmin = req.user!.role === 'admin';
+
+  if (!isInstructor && !isAdmin) {
+    const enrollment = await EnrollmentModel.findOne({ classId: req.params.classId, userId: req.user!.id });
+    if (!enrollment || enrollment.status !== 'active') {
+      return res.status(403).json({ success: false, message: 'Not enrolled in this class' });
+    }
+  }
+
+  // Generate signature (student role only; instructors use OAuth host flow)
+  if (!ENV.ZOOM_MEETING_SDK_CLIENT_ID || !ENV.ZOOM_MEETING_SDK_CLIENT_SECRET) {
+    return res.status(503).json({ success: false, message: 'Zoom Meeting SDK not configured' });
+  }
+
+  try {
+    const signature = generateZoomMeetingSDKSignature({
+      meetingNumber: session.zoomMeetingId,
+      role: 0, // Student role only; instructor/ZAK hosting is not implemented here
+    });
+
+    const user = await User.findById(req.user!.id);
+
+    return res.json({
+      success: true,
+      data: {
+        signature,
+        meetingNumber: session.zoomMeetingId,
+        passWord: session.zoomPasscode || undefined,
+        userName: user?.fullName || 'Student',
+        userEmail: user?.email,
+      },
+    });
+  } catch (error) {
+    return res.status(503).json({ success: false, message: 'Failed to generate meeting credentials' });
+  }
 });
 
 router.use('/:id', async (req: AuthRequest, res, next) => {

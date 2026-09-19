@@ -44,6 +44,7 @@
     "@stripe/stripe-js": "^8.7.0",
     "@tanstack/react-query": "^5.90.20",
     "@types/canvas-confetti": "^1.9.0",
+    "@zoom/meetingsdk": "^6.5.0",
     "agora-rtc-sdk-ng": "^4.24.2",
     "axios": "^1.13.4",
     "canvas-confetti": "^1.9.4",
