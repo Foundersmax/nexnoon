@@ -5,6 +5,7 @@ export interface IEnrollment extends Document {
   userId: Types.ObjectId;
   status: 'active' | 'completed' | 'dropped';
   progress: number;
+  attendedSessions: Types.ObjectId[];
   enrolledAt: Date;
   completedAt?: Date;
   certificateUrl?: string;
@@ -20,6 +21,7 @@ const EnrollmentSchema = new Schema<IEnrollment>(
       default: 'active',
     },
     progress: { type: Number, default: 0 },
+    attendedSessions: { type: [Schema.Types.ObjectId], ref: 'ClassSchedule', default: [] },
     enrolledAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
     certificateUrl: { type: String },

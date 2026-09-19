@@ -1,10 +1,11 @@
 import { Router, Request } from 'express';
-import { ClassScheduleModel } from '../models/Class';
+import { ClassModel, ClassScheduleModel } from '../models/Class';
 import { ZoomWebhookEventModel } from '../models/ZoomWebhookEvent';
 import { AttendanceRecordModel } from '../models/AttendanceRecord';
 import { EnrollmentModel } from '../models/Enrollment';
 import { User } from '../models/User';
 import { verifyZoomWebhookSignature, hashZoomWebhookValidationToken } from '../utils/zoom';
+import { notifyClassSessionStarted } from '../utils/notify';
 import { rateLimit } from '../middleware/rateLimit';
 
 interface RawBodyRequest extends Request {
@@ -70,17 +71,36 @@ router.post('/', async (req: RawBodyRequest, res) => {
     switch (event) {
       case 'meeting.started': {
         if (!meetingId) break;
-        await ClassScheduleModel.updateOne(
-          { zoomMeetingId: meetingId, status: { $in: ['scheduled', 'live'] } },
+        // Only a genuine scheduled -> live transition should notify students -
+        // an instructor who already used the manual "Start Class as Host" flow
+        // (class.routes.ts's /start endpoint) has already flipped this to 'live'
+        // and notified them, so this webhook delivery is just Zoom confirming
+        // what already happened and must not re-notify.
+        const session = await ClassScheduleModel.findOneAndUpdate(
+          { zoomMeetingId: meetingId, status: 'scheduled' },
           { $set: { status: 'live' } }
         );
+        if (session) {
+          const cls = await ClassModel.findById(session.classId);
+          if (cls) {
+            await notifyClassSessionStarted({
+              classId: String(session.classId),
+              classTitle: cls.title,
+              sessionId: session.id,
+              sessionTitle: session.title,
+            });
+          }
+        }
         break;
       }
       case 'meeting.ended': {
         if (!meetingId) break;
+        // Goes straight to 'completed' - there's no separate finalization step in
+        // this MVP, so the moment Zoom reports the meeting stopped, the session is
+        // done for the instructor and every student alike.
         await ClassScheduleModel.updateOne(
           { zoomMeetingId: meetingId, status: { $in: ['scheduled', 'live'] } },
-          { $set: { status: 'ended' } }
+          { $set: { status: 'completed' } }
         );
         break;
       }

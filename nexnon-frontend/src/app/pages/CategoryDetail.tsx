@@ -380,8 +380,8 @@ export default function CategoryDetail() {
                     </h3>
 
                     <div className="flex items-center justify-between gap-2 text-sm text-gray-600 m-[0px] -mt-1 mx-[0px] my-[5px]">
-                      <div className="flex items-center min-w-0">
-                        <MapPin className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                      <div className="flex items-center min-w-0 -ml-0.5">
+                        <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
                         <span className="text-[12px] truncate">Online, Live</span>
                       </div>
                       <span className="text-[12px] text-gray-500 flex-shrink-0">

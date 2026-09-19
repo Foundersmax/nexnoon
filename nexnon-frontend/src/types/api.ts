@@ -173,6 +173,8 @@ export interface Enrollment {
   userId: string;
   status: 'active' | 'completed' | 'dropped';
   progress: number;
+  /** Session IDs this student has attended (recorded when they successfully join). */
+  attendedSessions?: string[];
   enrolledAt: string;
   completedAt?: string;
   certificateUrl?: string;

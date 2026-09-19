@@ -6,12 +6,15 @@ import { ENV } from './env';
  * (countdowns, button labels) and must never recompute joinability itself.
  */
 
-export type SessionLifecycleStatus = 'scheduled' | 'live' | 'ended' | 'completed' | 'cancelled';
+export type SessionLifecycleStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
 
 export type JoinDecisionCode =
   | 'too_early'
   | 'joinable'
   | 'late_joinable'
+  /** The scheduled join window has closed by elapsed time. This is a computed
+   *  decision, not a stored session status - a session that's genuinely still
+   *  `live` per Zoom's own webhook never reaches this, no matter how long it runs. */
   | 'ended'
   | 'completed'
   | 'cancelled'
@@ -43,11 +46,16 @@ export function evaluateJoinWindow(session: SessionTimingInput, now: Date = new 
   if (session.status === 'completed') {
     return { code: 'completed', allowed: false, httpStatus: 409, message: 'This session has already ended' };
   }
-  if (session.status === 'ended') {
-    return { code: 'ended', allowed: false, httpStatus: 409, message: 'This session has already ended' };
-  }
   if (!session.hasZoomMeeting) {
     return { code: 'missing_meeting', allowed: false, httpStatus: 409, message: 'Meeting not available for this session' };
+  }
+  // The instructor has actually started the meeting (meeting.started webhook) -
+  // that's a stronger, more current signal than our own scheduled-time estimate,
+  // so it always wins over the early-join-window check below. This is what lets
+  // a student join the moment their teacher starts class early, instead of being
+  // stuck on a "starts in N hours" countdown until the originally scheduled time.
+  if (session.status === 'live') {
+    return { code: 'joinable', allowed: true, httpStatus: 200, message: 'Session is live' };
   }
 
   const nowMs = now.getTime();

@@ -9,6 +9,7 @@ import { AttendanceRecordModel } from '../models/AttendanceRecord';
 import { requireAuth, requireRole, AuthRequest } from '../middleware/auth';
 import { createZoomMeeting, updateZoomMeeting, generateZoomMeetingSDKSignature, getZoomMeetingStartUrl } from '../utils/zoom';
 import { evaluateJoinWindow, sessionsOverlap } from '../config/liveClassPolicy';
+import { notifyClassSessionStarted } from '../utils/notify';
 import { rateLimit } from '../middleware/rateLimit';
 import { ENV } from '../config/env';
 
@@ -580,7 +581,7 @@ router.post(
     const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.classId });
     if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-    if (session.status === 'cancelled' || session.status === 'completed' || session.status === 'ended') {
+    if (session.status === 'cancelled' || session.status === 'completed') {
       return res.status(409).json({ success: false, message: `Session is ${session.status}` });
     }
     if (!session.zoomMeetingId) {
@@ -869,6 +870,65 @@ router.patch('/:id/schedule/:sessionId', requireAuth, requireRole('instructor'),
       : 'Session rescheduled in Nexnoon. Zoom could not be updated automatically; please contact support if this repeats.';
 
   return res.json({ success: true, data: stripHostFields(normalizeSchedule(session)), message });
+});
+
+/**
+ * Instructor starting a session, called the moment they click "Start Class as
+ * Host". Flips status to 'live' synchronously so every enrolled student's join
+ * gate opens immediately (see evaluateJoinWindow/ZoomMeetingComponent) instead
+ * of waiting on the meeting.started webhook - which never fires at all when
+ * Zoom isn't configured (demo/static-link mode) and is otherwise async/delayed.
+ * Idempotent: starting an already-live session just re-confirms it without
+ * re-notifying students.
+ */
+router.post('/:id/schedule/:sessionId/start', requireAuth, requireRole('instructor'), async (req, res) => {
+  const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.id });
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  if (session.status === 'completed' || session.status === 'cancelled') {
+    return res.status(409).json({ success: false, message: `Session is ${session.status}` });
+  }
+
+  const wasAlreadyLive = session.status === 'live';
+  session.status = 'live';
+  await session.save();
+
+  if (!wasAlreadyLive) {
+    const cls = await ClassModel.findById(req.params.id);
+    if (cls) {
+      await notifyClassSessionStarted({
+        classId: req.params.id,
+        classTitle: cls.title,
+        sessionId: session.id,
+        sessionTitle: session.title,
+      });
+    }
+  }
+
+  return res.json({ success: true, data: stripHostFields(normalizeSchedule(session)), message: 'Class started' });
+});
+
+/**
+ * Manual fallback for finalizing a session: the meeting.ended webhook already
+ * does this automatically the moment Zoom reports the meeting stopped, but an
+ * instructor who ended the meeting some other way (or whose Zoom account isn't
+ * webhook-subscribed) needs a way to close it out themselves so it doesn't sit
+ * at "live"/"scheduled" forever and keep blocking a real completed state.
+ */
+router.post('/:id/schedule/:sessionId/complete', requireAuth, requireRole('instructor'), async (req, res) => {
+  const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.id });
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  if (session.status === 'completed' || session.status === 'cancelled') {
+    return res.status(409).json({ success: false, message: `Session is already ${session.status}` });
+  }
+
+  session.status = 'completed';
+  await session.save();
+
+  return res.json({ success: true, data: stripHostFields(normalizeSchedule(session)), message: 'Session marked complete' });
 });
 
 router.delete('/:id/schedule/:sessionId', requireAuth, requireRole('instructor'), async (req, res) => {

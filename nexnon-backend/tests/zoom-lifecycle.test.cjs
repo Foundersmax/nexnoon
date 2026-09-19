@@ -34,6 +34,10 @@ test('join-window policy: pure unit coverage', () => {
   assert.equal(evaluateJoinWindow({ ...base, startTime: start, endTime: end }, new Date('2027-01-01T10:30:00.000Z')).code, 'joinable');
   assert.equal(evaluateJoinWindow({ ...base, startTime: start, endTime: end }, new Date('2027-01-01T11:15:00.000Z')).code, 'late_joinable');
   assert.equal(evaluateJoinWindow({ ...base, startTime: start, endTime: end }, new Date('2027-01-01T11:31:00.000Z')).code, 'ended');
+  // A host who starts early (status flips to 'live' via the meeting.started
+  // webhook) must let students in immediately, even hours before the originally
+  // scheduled start - the live signal overrides the early-join-window estimate.
+  assert.equal(evaluateJoinWindow({ ...base, status: 'live', startTime: start, endTime: end }, new Date('2027-01-01T06:00:00.000Z')).code, 'joinable');
   assert.equal(evaluateJoinWindow({ ...base, status: 'cancelled', startTime: start, endTime: end }, new Date('2027-01-01T10:00:00.000Z')).code, 'cancelled');
   assert.equal(evaluateJoinWindow({ ...base, status: 'completed', startTime: start, endTime: end }, new Date('2027-01-01T10:00:00.000Z')).code, 'completed');
   assert.equal(evaluateJoinWindow({ ...base, hasZoomMeeting: false, startTime: start, endTime: end }, new Date('2027-01-01T10:00:00.000Z')).code, 'missing_meeting');
@@ -233,10 +237,10 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     assert.equal(asOwner.status, 409);
   });
 
-  await t.test('host-access: cancelled, completed, and ended sessions are all rejected', async () => {
+  await t.test('host-access: cancelled and completed sessions are both rejected', async () => {
     const { ClassScheduleModel } = require('../dist/models/Class');
     let sessionNumber = 900;
-    for (const status of ['cancelled', 'completed', 'ended']) {
+    for (const status of ['cancelled', 'completed']) {
       const session = await ClassScheduleModel.create({
         classId: classA, sessionNumber: sessionNumber++, title: `Host access ${status} fixture`,
         startTime: new Date('2027-04-01T10:00:00.000Z'), endTime: new Date('2027-04-01T11:00:00.000Z'),
@@ -398,6 +402,29 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     }
   });
 
+  await t.test('manual complete: instructor can finalize a session Zoom never webhook-notified about', async () => {
+    const { ClassScheduleModel } = require('../dist/models/Class');
+    const session = await ClassScheduleModel.create({
+      classId: classA, sessionNumber: 953, title: 'Manual complete fixture',
+      startTime: new Date('2027-04-05T10:00:00.000Z'), endTime: new Date('2027-04-05T11:00:00.000Z'),
+      zoomMeetingId: '55566677788', status: 'live',
+    });
+
+    const asStudentOrOther = await request(`/v1/classes/${classA}/schedule/${session.id}/complete`, { method: 'POST', token: instructorB.token });
+    assert.equal(asStudentOrOther.status, 403, 'a different instructor must not be able to complete someone else\'s session');
+
+    const completed = await request(`/v1/classes/${classA}/schedule/${session.id}/complete`, { method: 'POST', token: instructorA.token });
+    assert.equal(completed.status, 200);
+    assert.equal(completed.body.data.status, 'completed');
+
+    const { ClassScheduleModel: Model2 } = require('../dist/models/Class');
+    const persisted = await Model2.findById(session.id);
+    assert.equal(persisted.status, 'completed');
+
+    const repeat = await request(`/v1/classes/${classA}/schedule/${session.id}/complete`, { method: 'POST', token: instructorA.token });
+    assert.equal(repeat.status, 409, 'completing an already-completed session must fail, not silently succeed twice');
+  });
+
   await t.test('webhook: endpoint URL validation challenge', async () => {
     const response = await request('/v1/zoom/webhook', { method: 'POST', body: {
       event: 'endpoint.url_validation', payload: { plainToken: 'abc123' },
@@ -450,6 +477,20 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     assert.equal(updated.status, 'live');
   });
 
+  await t.test('a student can join the moment the host starts early, even hours before the scheduled time', async () => {
+    // webhookSessionId is scheduled for 2027-03-01 (months from "now" in test
+    // time) and was just flipped to 'live' by the previous test's webhook - this
+    // is the exact end-to-end scenario the join-window override exists for: the
+    // teacher started class early, so a student must be let in immediately
+    // instead of seeing a "starts in N hours" countdown.
+    const enroll = await request('/v1/enrollments', { method: 'POST', token: student.token, body: { classId: classA } });
+    assert.ok([200, 201].includes(enroll.status));
+
+    const joined = await request(`/v1/classes/${classA}/sessions/${webhookSessionId}/join-credentials`, { method: 'POST', token: student.token });
+    assert.equal(joined.status, 200);
+    assert.ok(joined.body.data.signature, 'student must receive real join credentials, not a rejection');
+  });
+
   await t.test('webhook: duplicate delivery of the same event is processed once (idempotent)', async () => {
     const { ZoomWebhookEventModel } = require('../dist/models/ZoomWebhookEvent');
     const countBefore = await ZoomWebhookEventModel.countDocuments({ eventType: 'meeting.started' });
@@ -467,7 +508,7 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     assert.equal(countAfter - countBefore, 1, 'exactly one new event row for two identical deliveries');
   });
 
-  await t.test('webhook: meeting.ended moves the session to ended and blocks further joins', async () => {
+  await t.test('webhook: meeting.ended moves the session straight to completed and blocks further joins', async () => {
     const payload = JSON.stringify({ event: 'meeting.ended', event_ts: Date.now(), payload: { object: { id: webhookMeetingId, uuid: 'uuid-ended-1' } } });
     const { signature, timestamp } = signWebhook(payload);
     const response = await request('/v1/zoom/webhook', { method: 'POST', body: payload, headers: { 'x-zm-signature': signature, 'x-zm-request-timestamp': timestamp } });
@@ -475,10 +516,13 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
 
     const { ClassScheduleModel } = require('../dist/models/Class');
     const updated = await ClassScheduleModel.findById(webhookSessionId);
-    assert.equal(updated.status, 'ended');
+    // No separate "ended" limbo state - completed for instructor and students alike.
+    assert.equal(updated.status, 'completed');
 
+    // Already enrolled by the earlier "join early" test - this is just an
+    // idempotency check, not asserting first-time enrollment.
     const enroll = await request('/v1/enrollments', { method: 'POST', token: student.token, body: { classId: classA } });
-    assert.equal(enroll.status, 201);
+    assert.ok([200, 201].includes(enroll.status));
     const blocked = await request(`/v1/classes/${classA}/sessions/${webhookSessionId}/join-credentials`, { method: 'POST', token: student.token });
     assert.equal(blocked.status, 409);
   });

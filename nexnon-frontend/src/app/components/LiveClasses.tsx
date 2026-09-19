@@ -171,29 +171,22 @@ export default function LiveClasses({ title = "Featured Classes", subtitle, vari
 
                   {/* Content */}
                   <div className="p-[10px] px-[0px] py-[5px]">
-                    <h3 className={`font-semibold text-base text-gray-900 mb-1 line-clamp-1 ${showBorderHover ? 'group-hover:text-[#889dd1] transition-colors' : ''}`}>
-                      {liveClass.title}
-                    </h3>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h3 className={`font-semibold text-base text-gray-900 line-clamp-1 min-w-0 ${showBorderHover ? 'group-hover:text-[#889dd1] transition-colors' : ''}`}>
+                        {liveClass.title}
+                      </h3>
+                      <p className="text-[15px] font-semibold text-gray-900 flex-shrink-0">{liveClass.price === 0 ? 'Free' : new Intl.NumberFormat(undefined, { style: 'currency', currency: liveClass.currency }).format(liveClass.price)}</p>
+                    </div>
 
                     <div className="flex items-center justify-between gap-2 text-sm text-gray-600 m-[0px] -mt-1 mx-[0px] my-[5px]">
-                      <div className="flex items-center min-w-0">
-                        <MapPin className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                      <div className="flex items-center min-w-0 -ml-0.5">
+                        <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
                         <span className="text-[12px] truncate">{liveClass.location}</span>
                       </div>
                       <span className="inline-flex items-center gap-1 text-[12px] text-gray-500 flex-shrink-0">
                         <Clock className="h-3.5 w-3.5" />
                         {liveClass.duration}
                       </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xl font-semibold text-gray-900 text-[15px]">{liveClass.price === 0 ? 'Free' : new Intl.NumberFormat(undefined, { style: 'currency', currency: liveClass.currency }).format(liveClass.price)}</p>
-                      </div>
-                      <div className="flex items-center text-sm text-gray-500">
-                        <Heart className="h-4 w-4 mr-1" />
-                        <span>{liveClass.participants} enrolled</span>
-                      </div>
                     </div>
                   </div>
                 </div>

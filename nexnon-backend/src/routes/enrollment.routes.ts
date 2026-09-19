@@ -61,7 +61,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
         classId: cls.id,
         userId: req.user!.id,
       },
-    }, { idempotencyKey: `enroll-${req.user!.id}-${cls.id}` });
+    }, { idempotencyKey: `enroll-${req.user!.id}-${cls.id}-${paymentMethodId}` });
 
     paymentRecord = await PaymentModel.create({
       userId: req.user!.id,

@@ -17,7 +17,7 @@ const heroBackground = "https://images.unsplash.com/photo-1572044162444-ad60f128
 export default function ClassDetail() {
   const { id, titleSlug } = useParams();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { data: myEnrollments } = useMyEnrollments({ pageSize: 100 }, { enabled: isAuthenticated });
   const [apiClass, setApiClass] = useState<Class | null>(null);
   const [error, setError] = useState('');
@@ -46,6 +46,7 @@ export default function ClassDetail() {
   const modules = details.curriculum?.length ? details.curriculum : (apiClass.schedule || []).map(s => ({ title: s.title, topics: s.description ? [s.description] : [new Date(s.startTime).toLocaleString()], project: 'Project details to be provided by the instructor.' }));
   const paymentId = apiClass.id;
   const activeEnrollment = myEnrollments?.data.find(e => e.classId === apiClass.id && e.status !== 'dropped');
+  const isOwnClass = !!user && user.id === apiClass.instructor.id;
   const formatPrice = (price: number) => price === 0 ? 'Free' : new Intl.NumberFormat(undefined, { style: 'currency', currency: apiClass.currency || 'USD' }).format(price);
   const formatDate = (value: string) => value ? new Date(value).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'To be announced';
     return (
@@ -136,7 +137,14 @@ export default function ClassDetail() {
                         </div>
                       </div>
 
-                      {activeEnrollment ? (
+                      {isOwnClass ? (
+                        <Button
+                          onClick={() => navigate(`/edit-class/${apiClass.id}`)}
+                          className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl text-sm font-semibold mb-3 shadow-lg hover:shadow-xl transition-all"
+                        >
+                          Manage This Class
+                        </Button>
+                      ) : activeEnrollment ? (
                         <Button
                           onClick={() => navigate(`/classroom/${apiClass.id}`)}
                           className="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-semibold mb-3 shadow-lg hover:shadow-xl transition-all"

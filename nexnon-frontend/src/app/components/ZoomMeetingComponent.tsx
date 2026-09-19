@@ -15,14 +15,22 @@ interface ZoomMeetingComponentProps {
   isEnrolled?: boolean;
   /** Class thumbnail shown behind the pre-join/waiting card. Purely presentational. */
   thumbnail?: string;
+  /** The assigned instructor (or admin) - shows the native "Start Class as Host" action. */
+  isHost?: boolean;
+  /** Called after the host successfully starts the session, so the caller can refetch and pick up the new 'live' status. */
+  onSessionStarted?: () => void;
 }
 
 type EmbeddedZoomClient = ReturnType<typeof ZoomMtgEmbeddedDefault.createClient>;
 
 type JoinState = 'waiting' | 'loading' | 'ready' | 'error';
-type ErrorReason = 'too-early' | 'not-enrolled' | 'unauthenticated' | 'cancelled' | 'missing-meeting' | 'sdk-config' | 'init-failed' | 'network' | 'meeting-ended' | 'meeting-locked';
+// 'too-early' = before our own 15-minute join window (schedule-based).
+// 'waiting-for-host' = the join window is open and credentials were issued, but
+// Zoom itself reports the meeting hasn't been started by the host yet - a normal,
+// expected state (waiting_room + join_before_host:false), not a failure.
+type ErrorReason = 'too-early' | 'waiting-for-host' | 'not-enrolled' | 'unauthenticated' | 'cancelled' | 'missing-meeting' | 'sdk-config' | 'init-failed' | 'network' | 'meeting-ended' | 'meeting-locked';
 
-export default function ZoomMeetingComponent({ classId, session, userName, instructorName, isEnrolled, thumbnail }: ZoomMeetingComponentProps) {
+export default function ZoomMeetingComponent({ classId, session, userName, instructorName, isEnrolled, thumbnail, isHost, onSessionStarted }: ZoomMeetingComponentProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<EmbeddedZoomClient | null>(null);
@@ -31,10 +39,52 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
   const [error, setError] = useState<ErrorReason | null>(null);
   const [countdown, setCountdown] = useState<string>('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hostAccessState, setHostAccessState] = useState<'idle' | 'loading' | 'error'>('idle');
 
-  // Update countdown
+  // Keeps join eligibility in sync with the session's real lifecycle status
+  // (polled from the backend - see BackendClassroom's refetchInterval) as well
+  // as elapsed time, every second. Previously this only ran once on mount and
+  // never re-evaluated, so a student who kept the tab open could get stuck on a
+  // stale "starts in 15 minutes" message, or - worse - keep seeing the "Join
+  // Class" button and enrollment confirmation for a session that had already
+  // ended, with nothing stopping them from trying to join it again.
+  //
+  // Once already connected (state === 'ready'), this defers entirely to Zoom's
+  // own connection-change event instead of forcing the UI away mid-meeting just
+  // because a poll happened to land while the backend's status hadn't caught up
+  // yet.
   useEffect(() => {
-    const timer = setInterval(() => {
+    if (state === 'ready') return;
+
+    // Terminal states end the "can I join" story outright - the calm
+    // "Class Ended" card (reusing 'meeting-ended') for a normal completion, the
+    // more direct 'cancelled' card when the instructor cancelled it. Neither
+    // should ever show a Join button or the "you're enrolled" line again.
+    if (session.status === 'completed') {
+      setCountdown('');
+      setError('meeting-ended');
+      setState('error');
+      return;
+    }
+    if (session.status === 'cancelled') {
+      setCountdown('');
+      setError('cancelled');
+      setState('error');
+      return;
+    }
+
+    // `session.status === 'live'` (set the moment the instructor actually starts
+    // the meeting - see the meeting.started webhook) always wins over the local
+    // countdown estimate below, same as the backend's own join-window check: a
+    // teacher who starts early must let students in immediately, not leave them
+    // staring at a "starts in N hours" countdown until the originally scheduled time.
+    if (session.status === 'live') {
+      setCountdown('');
+      setError(prev => (prev === 'too-early' ? null : prev));
+      return;
+    }
+
+    const evaluate = () => {
       const now = Date.now();
       const startTime = new Date(session.startTime).getTime();
       const timeUntilStart = startTime - now;
@@ -50,23 +100,19 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         setCountdown(`Ready to join in ${minutes}m ${seconds}s`);
       } else {
         setCountdown('');
-        clearInterval(timer);
       }
-    }, 1000);
 
+      setError(prev => {
+        if (prev === 'too-early' && timeUntilStart <= fifteenMinutes) return null;
+        if (prev === null && timeUntilStart > fifteenMinutes && state === 'waiting') return 'too-early';
+        return prev;
+      });
+    };
+
+    evaluate();
+    const timer = setInterval(evaluate, 1000);
     return () => clearInterval(timer);
-  }, [session.startTime]);
-
-  // Check if too early and set error
-  useEffect(() => {
-    const now = Date.now();
-    const startTime = new Date(session.startTime).getTime();
-    const fifteenMinutes = 15 * 60 * 1000;
-
-    if (now < startTime - fifteenMinutes && state === 'waiting') {
-      setError('too-early');
-    }
-  }, [session.startTime, state]);
+  }, [session.startTime, session.status, state]);
 
   // Leave the meeting and free the SDK's media resources if the student navigates
   // away (e.g. back to My Classes) while still connected.
@@ -111,6 +157,33 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
     }
   };
 
+  const handleStartAsHost = async () => {
+    setHostAccessState('loading');
+    try {
+      const response = await apiClient.post(`/classes/${classId}/sessions/${session.id}/host-access`, {});
+      const startUrl = response.data?.data?.startUrl;
+      if (!startUrl) {
+        setHostAccessState('error');
+        return;
+      }
+      window.open(startUrl, '_blank', 'noopener,noreferrer');
+      setHostAccessState('idle');
+
+      // Flips the session to 'live' in the backend right away (and notifies
+      // enrolled students) instead of waiting on Zoom's meeting.started webhook,
+      // which is async and never fires at all without real Zoom credentials
+      // configured. A failure here shouldn't block the host, who already has
+      // their start link - it just means students' join gates open a bit late,
+      // once the webhook (if any) or the next status poll catches up.
+      apiClient.post(`/classes/${classId}/schedule/${session.id}/start`, {})
+        .then(() => onSessionStarted?.())
+        .catch((err) => console.error('Failed to mark session live:', err));
+    } catch (err) {
+      console.error('Failed to get host start link:', err);
+      setHostAccessState('error');
+    }
+  };
+
   const handleJoinMeeting = async () => {
     setState('loading');
     setError(null);
@@ -126,7 +199,11 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
       if (!response.data.success) {
         const message = response.data.message || 'Unable to join meeting';
         if (message.includes('not started')) {
+          // Backend-enforced schedule window, not a failure - show the friendly
+          // countdown card instead of the generic error card.
           setError('too-early');
+          setState('waiting');
+          return;
         } else if (message.includes('not enrolled')) {
           setError('not-enrolled');
         } else if (message.includes('cancelled') || message.includes('completed') || message.includes('already ended') || message.includes('join window')) {
@@ -204,14 +281,20 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         const reason = typeof sdkError?.reason === 'string' ? sdkError.reason.toLowerCase() : '';
         if (reason.includes('ended')) {
           setError('meeting-ended');
+          setState('error');
         } else if (reason.includes('not started')) {
-          setError('too-early');
+          // Credentials were valid (the schedule window is open) - Zoom is just
+          // reporting the host hasn't pressed Start yet. Expected, not a failure:
+          // show the friendly waiting card, not the generic error card.
+          setError('waiting-for-host');
+          setState('waiting');
         } else if (reason.includes('locked')) {
           setError('meeting-locked');
+          setState('error');
         } else {
           setError('init-failed');
+          setState('error');
         }
-        setState('error');
       }
     } catch (err: any) {
       console.error('Request failed:', err);
@@ -221,6 +304,8 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         const message = err.response.data?.message || '';
         if (message.includes('not started')) {
           setError('too-early');
+          setState('waiting');
+          return;
         } else if (message.includes('cancelled') || message.includes('completed') || message.includes('already ended') || message.includes('join window')) {
           setError('cancelled');
         } else {
@@ -240,7 +325,8 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
   };
 
   const errorMessages: Record<ErrorReason, string> = {
-    'too-early': `This session starts at ${new Date(session.startTime).toLocaleString()}. You can join 15 minutes before start time.`,
+    'too-early': `This session starts at ${new Date(session.startTime).toLocaleString()}. You can join up to 15 minutes early.`,
+    'waiting-for-host': "Your instructor hasn't started the class yet. You'll be let in automatically as soon as they do.",
     'not-enrolled': 'You are not enrolled in this class. Please enroll first to join the live session.',
     'unauthenticated': 'Your session has expired. Please sign in again to join this class.',
     'cancelled': `This session has been ${session.status}. Unable to join.`,
@@ -268,49 +354,81 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
       >
         <div ref={containerRef} className="absolute inset-0" />
 
-        {state === 'waiting' && error === 'too-early' && (
+        {state === 'waiting' && (
           // Opaque background: the SDK can leave a partial "waiting" panel of its own
           // mounted in the zoomAppRoot container beneath this; without an opaque fill
           // here, that stray SDK content shows through around our centered message.
           // Title/instructor/date are intentionally omitted here - the LiveClassHeader
           // right above this card already shows them; this card only adds what's new.
           <div className="absolute inset-0 z-10 overflow-hidden">
-            {thumbnail && (
+            {error && thumbnail && (
               <img src={thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover opacity-25" />
             )}
-            <div className="absolute inset-0 bg-gray-900/85" />
+            <div className={`absolute inset-0 ${error ? 'bg-gray-900/85' : 'bg-gray-900'}`} />
             <div className="relative h-full flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
-              <div className="w-16 h-16 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center mb-4 flex-shrink-0">
-                <Clock className="h-7 w-7 text-blue-300" />
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 flex-shrink-0 ${error ? 'bg-blue-500/20 border border-blue-400/30' : 'bg-white/10 border border-white/20'}`}>
+                {error ? <Clock className="h-7 w-7 text-blue-300" /> : <Video className="h-7 w-7 text-white" />}
               </div>
-              {countdown && <p className="text-3xl font-mono font-bold text-white mb-2" role="status" aria-live="polite">{countdown}</p>}
-              <p className="text-white/60 text-sm max-w-sm">You can join 15 minutes before this session starts.</p>
-            </div>
-          </div>
-        )}
 
-        {state === 'waiting' && !error && (
-          // Title/instructor/date/status are intentionally omitted here - the
-          // LiveClassHeader right above this card already shows them.
-          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
-            <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-4 flex-shrink-0">
-              <Video className="h-7 w-7 text-white" />
-            </div>
-            {isEnrolled && (
-              <p className="flex items-center gap-1.5 text-xs text-emerald-400 mb-4">
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> You&apos;re enrolled and ready to join
-              </p>
-            )}
-            <button
-              onClick={handleJoinMeeting}
-              className="inline-flex items-center gap-2 bg-[#889dd1] hover:bg-[#7086c4] text-white px-8 py-3 rounded-full font-semibold shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-            >
-              <Video className="h-4 w-4" aria-hidden="true" /> Join Class
-            </button>
-            {countdown && <p className="text-white/40 text-xs mt-3" aria-hidden="true">{countdown}</p>}
-            <div className="mt-5 max-w-xs space-y-1">
-              <p className="text-white/35 text-xs">Your browser may ask for camera and microphone access when you join.</p>
-              <p className="text-white/35 text-xs">Only enrolled students can join, and only during the scheduled session window.</p>
+              {error === 'too-early' && (
+                <>
+                  {countdown && <p className="text-3xl font-mono font-bold text-white mb-2" role="status" aria-live="polite">{countdown}</p>}
+                  <p className="text-white/60 text-sm max-w-sm">You can join up to 15 minutes before this session starts.</p>
+                </>
+              )}
+
+              {error === 'waiting-for-host' && (
+                <>
+                  <p className="text-white font-semibold mb-1">Waiting for your instructor&hellip;</p>
+                  <p className="text-white/60 text-sm max-w-sm">{errorMessages['waiting-for-host']}</p>
+                  <button
+                    onClick={handleJoinMeeting}
+                    className="mt-4 text-sm font-medium text-white/80 underline hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 rounded"
+                  >
+                    Try again
+                  </button>
+                </>
+              )}
+
+              {!error && (
+                <>
+                  {isEnrolled && (
+                    <p className="flex items-center gap-1.5 text-xs text-emerald-400 mb-4">
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> You&apos;re enrolled and ready to join
+                    </p>
+                  )}
+                  <button
+                    onClick={handleJoinMeeting}
+                    className="inline-flex items-center gap-2 bg-[#889dd1] hover:bg-[#7086c4] text-white px-8 py-3 rounded-full font-semibold shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+                  >
+                    <Video className="h-4 w-4" aria-hidden="true" /> Join Class
+                  </button>
+                  {countdown && <p className="text-white/40 text-xs mt-3" aria-hidden="true">{countdown}</p>}
+                </>
+              )}
+
+              {isHost && (
+                <div className="mt-5 pt-5 border-t border-white/10 w-full max-w-xs">
+                  <button
+                    onClick={handleStartAsHost}
+                    disabled={hostAccessState === 'loading'}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-gray-900 px-6 py-2.5 rounded-full font-semibold shadow-lg transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+                  >
+                    {hostAccessState === 'loading' ? 'Getting your host link…' : 'Start Class as Host'}
+                  </button>
+                  {hostAccessState === 'error' && (
+                    <p className="text-red-300 text-xs mt-2">Couldn&apos;t get your host link. Please try again.</p>
+                  )}
+                  <p className="text-white/35 text-xs mt-2">Opens Zoom in a new tab so you can start and control the meeting. Students can&apos;t join until you do.</p>
+                </div>
+              )}
+
+              {!error && (
+                <div className="mt-5 max-w-xs space-y-1">
+                  <p className="text-white/35 text-xs">Your browser may ask for camera and microphone access when you join.</p>
+                  <p className="text-white/35 text-xs">Only enrolled students can join, and only during the scheduled session window.</p>
+                </div>
+              )}
             </div>
           </div>
         )}

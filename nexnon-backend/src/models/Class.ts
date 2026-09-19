@@ -27,7 +27,15 @@ export interface IClassSchedule extends Document {
   zoomHostUserId?: string;
   /** Tracks the Zoom meeting-creation call itself, independent of session lifecycle below. */
   meetingCreationStatus: 'pending' | 'creating' | 'ready' | 'failed' | 'skipped';
-  status: 'scheduled' | 'live' | 'ended' | 'completed' | 'cancelled';
+  /**
+   * Session lifecycle, driven by Zoom webhooks (see zoom-webhook.routes.ts):
+   * scheduled -> live (meeting.started) -> completed (meeting.ended), or
+   * scheduled -> cancelled (instructor action). There is no separate "ended"
+   * limbo state between live and completed - the moment Zoom reports the
+   * meeting stopped, the session is done, for both the instructor and every
+   * student, with nothing further to finalize.
+   */
+  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
   recordingUrl?: string;
 }
 
@@ -129,7 +137,7 @@ const ClassScheduleSchema = new Schema<IClassSchedule>(
     },
     status: {
       type: String,
-      enum: ['scheduled', 'live', 'ended', 'completed', 'cancelled'],
+      enum: ['scheduled', 'live', 'completed', 'cancelled'],
       default: 'scheduled',
     },
     recordingUrl: { type: String },
