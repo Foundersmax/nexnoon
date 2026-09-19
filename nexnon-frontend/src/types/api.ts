@@ -97,7 +97,7 @@ export interface Class {
   learningOutcomes?: string[];
   prerequisites?: string[];
   materials?: string[];
-  assignments?: { title: string; description?: string; dueDate?: string }[];
+  assignments?: { id: string; title: string; description?: string; dueDate?: string; attachmentUrl?: string }[];
   id: string;
   title: string;
   description: string;
@@ -140,6 +140,17 @@ export interface ClassSchedule {
   zoomPasscode?: string;
   status: 'scheduled' | 'live' | 'completed' | 'cancelled';
   recordingUrl?: string;
+}
+
+/** A student's answer to one of a class's embedded `assignments` entries. */
+export interface AssignmentAnswer {
+  id: string;
+  classId: string;
+  assignmentId: string;
+  userId: string;
+  content?: string;
+  attachmentUrl?: string;
+  submittedAt: string;
 }
 
 export interface CreateClassRequest {

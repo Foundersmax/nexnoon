@@ -1,19 +1,52 @@
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
+import multer from 'multer';
 import { User } from '../models/User';
 import { z } from 'zod';
 import { ClassModel, ClassScheduleModel } from '../models/Class';
 import { EnrollmentModel } from '../models/Enrollment';
+import { AssignmentSubmissionModel } from '../models/AssignmentSubmission';
 import { ReviewModel } from '../models/Review';
 import { AttendanceRecordModel } from '../models/AttendanceRecord';
 import { requireAuth, requireRole, AuthRequest } from '../middleware/auth';
 import { createZoomMeeting, updateZoomMeeting, generateZoomMeetingSDKSignature, getZoomMeetingStartUrl } from '../utils/zoom';
 import { evaluateJoinWindow, sessionsOverlap } from '../config/liveClassPolicy';
 import { notifyClassSessionStarted } from '../utils/notify';
+import { uploadClassFile } from '../utils/cloudinary';
 import { rateLimit } from '../middleware/rateLimit';
 import { ENV } from '../config/env';
 
 const router = Router();
+
+/** Course materials/assignment attachments: common office/doc/media types, capped at 25MB. */
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'text/plain',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+]);
+
+const classFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype)) {
+      return cb(new Error('Unsupported file type'));
+    }
+    cb(null, true);
+  },
+});
 router.use((req: AuthRequest, res, next) => {
   if (req.headers.authorization) return requireAuth(req, res, next);
   next();
@@ -25,7 +58,27 @@ function normalizeClass(doc: any): any {
   const obj = doc.toObject ? doc.toObject() : { ...doc };
   const id = obj._id?.toString?.() ?? obj.id;
   const { _id, ...rest } = obj;
+  if (Array.isArray(rest.assignments)) {
+    rest.assignments = rest.assignments.map(normalizeAssignment);
+  }
   return { ...rest, id: id || _id };
+}
+
+/**
+ * Assignments are subdocuments embedded on the class (no separate collection),
+ * but each still gets its own Mongoose-generated `_id` - exposed as `id` here so
+ * the frontend has a stable handle to submit against and instructors can delete
+ * a single entry.
+ */
+function normalizeAssignment(assignment: any): any {
+  const { _id, ...rest } = assignment;
+  return { ...rest, id: _id?.toString?.() ?? rest.id };
+}
+
+function normalizeSubmission(doc: any): any {
+  const obj = doc.toObject ? doc.toObject() : { ...doc };
+  const { _id, __v, ...rest } = obj;
+  return { ...rest, id: _id?.toString?.() ?? rest.id };
 }
 
 /** Strips host/internal-only fields from a schedule doc before it goes in any ordinary API response. */
@@ -155,6 +208,16 @@ const createClassSchema = z.object({
   learningOutcomes: z.array(z.string()).optional(),
   prerequisites: z.array(z.string()).optional(),
   materials: z.array(z.string()).optional(),
+  assignments: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(300),
+        description: z.string().max(5000).optional(),
+        dueDate: z.string().datetime().optional(),
+        attachmentUrl: z.string().max(2000).optional(),
+      })
+    )
+    .optional(),
   status: z.enum(['draft', 'published', 'archived']).optional(),
   duration: z.number(),
   totalSessions: z.number(),
@@ -604,6 +667,73 @@ router.post(
   }
 );
 
+/**
+ * Student-only: submits (or resubmits, overwriting in place) an answer to one of
+ * the class's embedded `assignments` entries - a written answer, an attached
+ * file, or both. Registered ahead of the instructor-only `/:id` ownership gate
+ * below since this is a student action, not an instructor one.
+ */
+router.post(
+  '/:classId/assignments/:assignmentId/submissions',
+  requireAuth,
+  rateLimit({ windowMs: 60_000, max: 20, keyPrefix: 'assignment-submit' }),
+  (req: AuthRequest, res, next) => {
+    classFileUpload.single('file')(req, res, (err: unknown) => {
+      if (err) {
+        const message = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+          ? 'File is too large (25MB max)'
+          : err instanceof Error ? err.message : 'Invalid upload';
+        return res.status(400).json({ success: false, message });
+      }
+      next();
+    });
+  },
+  async (req: AuthRequest, res) => {
+    if (!isValidObjectId(req.params.classId)) {
+      return res.status(400).json({ success: false, message: 'Invalid class ID' });
+    }
+
+    const cls = await ClassModel.findById(req.params.classId);
+    if (!cls) return res.status(404).json({ success: false, message: 'Class not found' });
+
+    const assignment = (cls.assignments as any[]).find((a: any) => String(a._id) === req.params.assignmentId);
+    if (!assignment) return res.status(404).json({ success: false, message: 'Assignment not found' });
+
+    const enrollment = await EnrollmentModel.findOne({
+      classId: cls.id,
+      userId: req.user!.id,
+      status: { $ne: 'dropped' },
+    });
+    if (!enrollment) return res.status(403).json({ success: false, message: 'Not enrolled in this class' });
+
+    const content = typeof req.body?.content === 'string' ? req.body.content.trim() : '';
+    let attachmentUrl: string | undefined;
+    if (req.file) {
+      const result = await uploadClassFile(req.file.buffer, `nexnoon/classes/${cls.id}/submissions`, req.file.originalname, req.file.mimetype);
+      if (!result) return res.status(503).json({ success: false, message: 'File uploads are not configured' });
+      attachmentUrl = result.url;
+    }
+    if (!content && !attachmentUrl) {
+      return res.status(400).json({ success: false, message: 'Write an answer or attach a file' });
+    }
+
+    const submission = await AssignmentSubmissionModel.findOneAndUpdate(
+      { assignmentId: req.params.assignmentId, userId: req.user!.id },
+      {
+        $set: {
+          classId: cls.id,
+          content: content || undefined,
+          ...(attachmentUrl ? { attachmentUrl } : {}),
+          submittedAt: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    return res.json({ success: true, data: normalizeSubmission(submission), message: 'Assignment submitted' });
+  }
+);
+
 router.use('/:id', async (req: AuthRequest, res, next) => {
   if (req.method === 'GET') return next();
   return requireAuth(req, res, async () => {
@@ -636,6 +766,43 @@ router.patch('/:id', requireAuth, requireRole('instructor', 'admin'), async (req
     message: 'Class updated successfully',
   });
 });
+
+/**
+ * Instructor/admin-only: uploads a single class-content file (course material or
+ * assignment attachment) to Cloudinary and returns its URL. Does not itself write
+ * to the class document - the caller (frontend) follows up with a normal
+ * PATCH /:id carrying the returned url in `materials` or `assignments`, so this
+ * endpoint stays a single-purpose primitive reused by both features.
+ */
+router.post(
+  '/:id/uploads',
+  requireAuth,
+  requireRole('instructor', 'admin'),
+  rateLimit({ windowMs: 60_000, max: 20, keyPrefix: 'class-upload' }),
+  (req: AuthRequest, res, next) => {
+    classFileUpload.single('file')(req, res, (err: unknown) => {
+      if (err) {
+        const message = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+          ? 'File is too large (25MB max)'
+          : err instanceof Error ? err.message : 'Invalid upload';
+        return res.status(400).json({ success: false, message });
+      }
+      next();
+    });
+  },
+  async (req: AuthRequest, res) => {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file provided' });
+    }
+
+    const result = await uploadClassFile(req.file.buffer, `nexnoon/classes/${req.params.id}`, req.file.originalname, req.file.mimetype);
+    if (!result) {
+      return res.status(503).json({ success: false, message: 'File uploads are not configured' });
+    }
+
+    return res.json({ success: true, data: { url: result.url, name: req.file.originalname } });
+  }
+);
 
 router.delete('/:id', requireAuth, requireRole('instructor', 'admin'), async (req, res) => {
   const cls = await ClassModel.findById(req.params.id);

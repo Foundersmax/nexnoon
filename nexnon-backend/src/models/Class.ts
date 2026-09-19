@@ -52,7 +52,7 @@ export interface IClass extends Document {
   learningOutcomes: string[];
   prerequisites: string[];
   materials: string[];
-  assignments: { title: string; description?: string; dueDate?: Date }[];
+  assignments: { title: string; description?: string; dueDate?: Date; attachmentUrl?: string }[];
   instructor: {
     id: Types.ObjectId;
     name: string;
@@ -95,7 +95,7 @@ const ClassSchema = new Schema<IClass>(
     learningOutcomes: { type: [String], default: [] },
     prerequisites: { type: [String], default: [] },
     materials: { type: [String], default: [] },
-    assignments: { type: [{ title: String, description: String, dueDate: Date }], default: [] },
+    assignments: { type: [{ title: String, description: String, dueDate: Date, attachmentUrl: String }], default: [] },
     instructor: {
       id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
       name: { type: String, required: true },

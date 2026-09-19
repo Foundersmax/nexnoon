@@ -1,6 +1,6 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { ENV } from '@/config/env';
-import type { APIError, APIResponse } from '@/types/api';
+import type { APIError, APIResponse, AssignmentAnswer } from '@/types/api';
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -107,6 +107,55 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/**
+ * Posts multipart/form-data via `fetch` rather than the shared `apiClient`
+ * axios instance. Axios instances created with a default
+ * `Content-Type: application/json` header (as this one is) don't reliably
+ * strip that header for FormData bodies across environments, and the browser
+ * refuses to fill in the multipart boundary itself once *any* Content-Type has
+ * been explicitly set - so the server sees no boundary and parses no file at
+ * all. `fetch` has no such default to fight: leaving Content-Type unset here
+ * lets the browser generate the correct multipart boundary header.
+ */
+async function postMultipart(path: string, formData: FormData): Promise<any> {
+  const token = localStorage.getItem('authToken');
+
+  const response = await fetch(`${ENV.API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.success) {
+    throw new Error(body?.message || `Request failed (${response.status})`);
+  }
+  return body.data;
+}
+
+export async function uploadFile(path: string, file: File): Promise<{ url: string; name: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return postMultipart(path, formData);
+}
+
+/** Submits (or resubmits) a student's answer to a class assignment - a written answer, a file, or both. */
+export async function submitAssignmentAnswer(
+  classId: string,
+  assignmentId: string,
+  { content, file }: { content?: string; file?: File | null }
+): Promise<AssignmentAnswer> {
+  const path = `/classes/${classId}/assignments/${assignmentId}/submissions`;
+  if (file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (content) formData.append('content', content);
+    return postMultipart(path, formData);
+  }
+  const response = await apiClient.post(path, { content });
+  return response.data.data;
+}
 
 // Helper function to extract error messages
 export const getErrorMessage = (error: unknown): string => {

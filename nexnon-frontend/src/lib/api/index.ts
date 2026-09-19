@@ -1,5 +1,5 @@
 // Export API client
-export { default as apiClient, getErrorMessage } from './client';
+export { default as apiClient, getErrorMessage, uploadFile, submitAssignmentAnswer } from './client';
 
 // Export all services
 export { authService } from './services/auth.service';

@@ -3,11 +3,14 @@ import { isValidObjectId } from 'mongoose';
 import { ClassModel, ClassScheduleModel } from '../models/Class';
 import { EnrollmentModel } from '../models/Enrollment';
 import { PaymentModel } from '../models/Payment';
+import { AssignmentSubmissionModel } from '../models/AssignmentSubmission';
 import { User } from '../models/User';
 import { requireAuth, requireRole, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const normalize = (doc: any) => ({ ...doc, id: String(doc._id) });
+/** Assignments are subdocuments (no own collection) - expose their `_id` as `id` too, like everything else. */
+const normalizeAssignment = (assignment: any) => { const { _id, ...rest } = assignment; return { ...rest, id: String(_id) }; };
 
 router.get('/categories', async (_req, res) => {
   const categories = await ClassModel.aggregate([
@@ -59,7 +62,17 @@ router.get('/class/:id', requireAuth, async (req: AuthRequest, res) => {
   const canTeach = req.user!.role === 'admin' || String(cls.instructor.id) === req.user!.id;
   if (!enrollment && !canTeach) return res.status(403).json({ success: false, message: 'Enroll in this class to access its classroom' });
   const sessions = await ClassScheduleModel.find({ classId: cls._id }).sort({ sessionNumber: 1 }).lean();
-  res.json({ success: true, data: { class: normalize(cls), sessions: sessions.map(normalize), enrollment: enrollment ? normalize(enrollment) : null, canTeach } });
+  // Only the requesting student's own submissions - never another student's.
+  const mySubmissions = enrollment
+    ? await AssignmentSubmissionModel.find({ classId: cls._id, userId: req.user!.id }).lean()
+    : [];
+  res.json({ success: true, data: {
+    class: { ...normalize(cls), assignments: (cls.assignments || []).map(normalizeAssignment) },
+    sessions: sessions.map(normalize),
+    enrollment: enrollment ? normalize(enrollment) : null,
+    canTeach,
+    mySubmissions: mySubmissions.map(normalize),
+  } });
 });
 
 export default router;

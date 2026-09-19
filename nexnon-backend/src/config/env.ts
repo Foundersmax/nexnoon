@@ -44,6 +44,11 @@ export const ENV = {
   // Live class join-window policy (see src/config/liveClassPolicy.ts)
   LIVE_CLASS_JOIN_EARLY_MINUTES: Number(process.env.LIVE_CLASS_JOIN_EARLY_MINUTES) || 15,
   LIVE_CLASS_LATE_JOIN_GRACE_MINUTES: Number(process.env.LIVE_CLASS_LATE_JOIN_GRACE_MINUTES) || 30,
+
+  // Cloudinary (optional - instructor material/assignment file uploads are disabled without it)
+  CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || '',
+  CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY || '',
+  CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || '',
 };
 
 

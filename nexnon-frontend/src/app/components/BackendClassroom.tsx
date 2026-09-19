@@ -5,13 +5,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBackendData } from '@/hooks/useBackendData';
 import { apiClient, getErrorMessage } from '@/lib/api';
 import { classDetailUrl } from '@/lib/url';
-import type { Class, ClassSchedule, Enrollment } from '@/types/api';
+import type { AssignmentAnswer, Class, ClassSchedule, Enrollment } from '@/types/api';
 import Header from './Header';
 import Footer from './Footer';
 import BackendState from './BackendState';
 import ZoomMeetingComponent from './ZoomMeetingComponent';
+import ManageMaterials from './ManageMaterials';
+import ManageAssignments from './ManageAssignments';
+import StudentAssignments from './StudentAssignments';
+import FileAttachment from './FileAttachment';
 
-type Workspace = { class: Class; sessions: ClassSchedule[]; enrollment: Enrollment | null; canTeach: boolean };
+type Workspace = { class: Class; sessions: ClassSchedule[]; enrollment: Enrollment | null; canTeach: boolean; mySubmissions: AssignmentAnswer[] };
 type View = 'classroom' | 'materials' | 'assignments' | 'recording' | 'live' | 'waiting' | 'certificate';
 
 const heroFallback = 'https://images.unsplash.com/photo-1572044162444-ad60f128bdea?w=1080';
@@ -116,7 +120,7 @@ export default function BackendClassroom({ view }: { view: View }) {
   if (!classId) return <BackendState title={title} message="Select a class from My Classes to continue." />;
   if (query.isError) return <BackendState title={title} message="Unable to open this class. Check your connection and make sure you are enrolled or teaching it." retry={() => query.refetch()} />;
   if (!query.data) return <BackendState title={title} loading message="Loading Nexnoon" />;
-  const { class: cls, sessions, enrollment, canTeach } = query.data;
+  const { class: cls, sessions, enrollment, canTeach, mySubmissions } = query.data;
   const requested = params.get('sessionId');
   const session = requested ? sessions.find(s => s.id === requested) : view === 'recording'
     ? sessions.find(s => s.recordingUrl)
@@ -235,16 +239,18 @@ export default function BackendClassroom({ view }: { view: View }) {
                   {!sessions.length && <p className="text-sm text-gray-500 p-4">No sessions have been scheduled yet.</p>}
                   {sessions.map(s => {
                     const isActive = session?.id === s.id;
-                    // "Completed" here is per-student: a session is marked attended
-                    // (server-side) the moment this student successfully joins it -
-                    // not the class-wide session status, which the instructor's own
-                    // schedule view uses instead (they don't "attend" their own class).
-                    const attended = !canTeach && !!enrollment?.attendedSessions?.includes(s.id);
+                    // "Completed" for a student is per-student: a session is marked
+                    // attended (server-side) the moment this student successfully
+                    // joins it. Instructors don't "attend" their own class, so for
+                    // them this falls back to the class-wide session status instead -
+                    // a session that's run its course shows as done for the teacher
+                    // too, not just a plain unfilled circle forever.
+                    const isDone = canTeach ? s.status === 'completed' : !!enrollment?.attendedSessions?.includes(s.id);
                     return (
                       <div key={s.id} className={`px-4 py-3 transition-colors ${isActive ? 'bg-[#889dd1]/10' : 'hover:bg-gray-50'}`}>
                         <Link to={`/classroom/${classId}?sessionId=${s.id}`} className="flex items-start gap-3">
                           <span className="mt-0.5 flex-shrink-0 w-5 h-5 flex items-center justify-center">
-                            {attended ? (
+                            {isDone ? (
                               <CheckCircle2 className="h-5 w-5 text-[#889dd1]" />
                             ) : s.status === 'live' ? (
                               <span className="relative flex h-3 w-3" aria-hidden="true">
@@ -282,8 +288,22 @@ export default function BackendClassroom({ view }: { view: View }) {
             <p className="whitespace-pre-line text-gray-600">{cls.description}</p>
           </div>
         </>}
-        {view === 'materials' && <>{!cls.materials?.length && <p>No materials have been added by the instructor.</p>}{cls.materials?.map((item,index)=><div className="border-b py-4" key={index}>{safeUrl(item) ? <a href={safeUrl(item)} target="_blank" rel="noopener noreferrer" className="underline">{item}</a> : <p>{item}</p>}</div>)}</>}
-        {view === 'assignments' && <>{!cls.assignments?.length && <p>No assignments have been added by the instructor.</p>}{cls.assignments?.map((a,index)=><article className="border rounded p-4 mb-4" key={index}><h3 className="font-bold">{a.title}</h3><p>{a.description}</p><p>Due: {date(a.dueDate)}</p></article>)}</>}
+        {view === 'materials' && <>
+          {canTeach ? (
+            <ManageMaterials classId={classId!} materials={cls.materials || []} onChanged={() => query.refetch()} />
+          ) : !cls.materials?.length ? (
+            <p>No materials have been added by the instructor.</p>
+          ) : (
+            <div className="space-y-2">{cls.materials.map((item, index) => <FileAttachment key={index} url={item} />)}</div>
+          )}
+        </>}
+        {view === 'assignments' && <>
+          {canTeach ? (
+            <ManageAssignments classId={classId!} assignments={cls.assignments || []} onChanged={() => query.refetch()} />
+          ) : (
+            <StudentAssignments classId={classId!} assignments={cls.assignments || []} submissions={mySubmissions} onChanged={() => query.refetch()} />
+          )}
+        </>}
         {view === 'recording' && <>{recordingUrl ? <><h3 className="font-bold mb-4">{session?.title}</h3><video className="w-full rounded-lg bg-black" controls src={recordingUrl} /><a className="underline block mt-4" href={recordingUrl} target="_blank" rel="noopener noreferrer">Open recording</a></> : <p>No recording is available for this session yet.</p>}</>}
         {(view === 'live' || view === 'waiting') && <>{session ? (
           <>
