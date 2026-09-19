@@ -323,6 +323,71 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     assert.ok(!loggedMessages.some(line => /zoom\.us|zak=/i.test(line)), 'nothing sensitive should have been logged for this simulated failure');
   });
 
+  await t.test('host-access: a Zoom OAuth token failure inside the fresh-fetch call fails safely (no leaked auth header or response body, anywhere)', async () => {
+    // Exercises the REAL getZoomMeetingStartUrl (not a stub of it), specifically
+    // the code path where its own internal getZoomAccessToken() call throws -
+    // this must be caught inside getZoomMeetingStartUrl itself and turned into a
+    // safe `null`, never left to bubble to the global error handler (which logs
+    // the raw error object, including an AxiosError's request/response details).
+    const { ClassScheduleModel } = require('../dist/models/Class');
+    const { ENV } = require('../dist/config/env');
+    const axios = require('axios');
+
+    const originalAccountId = ENV.ZOOM_ACCOUNT_ID;
+    const originalClientId = ENV.ZOOM_CLIENT_ID;
+    const originalClientSecret = ENV.ZOOM_CLIENT_SECRET;
+    const originalAxiosPost = axios.post;
+    const originalConsoleError = console.error;
+
+    // A realistic AxiosError-shaped rejection carrying the kind of sensitive
+    // fields a real Zoom OAuth failure could carry, so the test can prove none
+    // of it ever surfaces - not in the HTTP response, not in the logs.
+    const SENSITIVE_AUTH_HEADER = 'Basic ZmFrZS1jbGllbnQtaWQ6ZmFrZS1jbGllbnQtc2VjcmV0';
+    const SENSITIVE_RESPONSE_DETAIL = 'invalid_client_super_secret_reason';
+    const simulatedOAuthFailure = Object.assign(new Error('Request failed with status code 401'), {
+      isAxiosError: true,
+      config: { headers: { Authorization: SENSITIVE_AUTH_HEADER } },
+      response: { status: 401, data: { reason: SENSITIVE_RESPONSE_DETAIL } },
+    });
+
+    const session = await ClassScheduleModel.create({
+      classId: classA, sessionNumber: 952, title: 'Host access OAuth-failure fixture',
+      startTime: new Date('2027-04-04T10:00:00.000Z'), endTime: new Date('2027-04-04T11:00:00.000Z'),
+      zoomMeetingId: '44455566677', status: 'scheduled',
+    });
+
+    const loggedMessages = [];
+    console.error = (...args) => { loggedMessages.push(args.map(String).join(' ')); };
+    // Non-empty so getZoomAccessToken() actually attempts the (mocked) OAuth call
+    // instead of short-circuiting to demo mode.
+    ENV.ZOOM_ACCOUNT_ID = 'fake-account-id';
+    ENV.ZOOM_CLIENT_ID = 'fake-client-id';
+    ENV.ZOOM_CLIENT_SECRET = 'fake-client-secret';
+    axios.post = async () => { throw simulatedOAuthFailure; };
+
+    let response;
+    try {
+      response = await request(`/v1/classes/${classA}/sessions/${session.id}/host-access`, { method: 'POST', token: instructorA.token });
+    } finally {
+      ENV.ZOOM_ACCOUNT_ID = originalAccountId;
+      ENV.ZOOM_CLIENT_ID = originalClientId;
+      ENV.ZOOM_CLIENT_SECRET = originalClientSecret;
+      axios.post = originalAxiosPost;
+      console.error = originalConsoleError;
+    }
+
+    // Fails safely - a generic 503, not a 500 from an uncaught exception reaching
+    // the global error handler.
+    assert.equal(response.status, 503);
+    const serialized = JSON.stringify(response.body);
+    assert.ok(!serialized.includes(SENSITIVE_AUTH_HEADER), 'response must never include the OAuth Authorization header');
+    assert.ok(!serialized.includes(SENSITIVE_RESPONSE_DETAIL), 'response must never include Zoom\'s raw error response body');
+
+    const allLogs = loggedMessages.join('\n');
+    assert.ok(!allLogs.includes(SENSITIVE_AUTH_HEADER), 'logs must never include the OAuth Authorization header');
+    assert.ok(!allLogs.includes(SENSITIVE_RESPONSE_DETAIL), 'logs must never include Zoom\'s raw error response body');
+  });
+
   await t.test('host-access: normal class/schedule responses exclude host access', async () => {
     const classDetail = await request(`/v1/classes/${classA}`);
     assert.equal(classDetail.status, 200);

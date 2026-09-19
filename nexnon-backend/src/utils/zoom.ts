@@ -154,10 +154,15 @@ export const updateZoomMeeting = async (
  * Zoom error) - callers should log only `error` here, never the return value.
  */
 export const getZoomMeetingStartUrl = async (meetingId: string): Promise<string | null> => {
-  const accessToken = await getZoomAccessToken();
-  if (!accessToken) return null;
-
+  // The access-token fetch is inside this same try/catch (not called before it) -
+  // any failure here is a Zoom API failure like any other and must be swallowed
+  // into a safe `null`, not left to propagate to the global error handler, which
+  // logs the raw error object (an AxiosError's `.config`/`.response` can carry the
+  // OAuth Basic-auth request header and Zoom's raw response body).
   try {
+    const accessToken = await getZoomAccessToken();
+    if (!accessToken) return null;
+
     const response = await axios.get<{ start_url?: string }>(
       `https://api.zoom.us/v2/meetings/${meetingId}`,
       { headers: { Authorization: `Bearer ${accessToken}` }, timeout: REQUEST_TIMEOUT_MS }
@@ -167,7 +172,7 @@ export const getZoomMeetingStartUrl = async (meetingId: string): Promise<string 
     // Safe operational log only - never the Zoom response body (which could
     // itself echo back sensitive request/response details).
     console.error(
-      `Zoom Retrieve-a-Meeting call failed while refreshing host start_url for meeting ${meetingId}:`,
+      `Zoom API call failed while refreshing host start_url for meeting ${meetingId}:`,
       error instanceof Error ? error.message : 'unknown error'
     );
     return null;
