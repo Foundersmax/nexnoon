@@ -1,21 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
+import { Link } from 'react-router';
+import { AlertCircle, CheckCircle2, Clock, Maximize2, Minimize2, Video } from 'lucide-react';
+import { apiClient } from '@/lib/api';
 import type { ClassSchedule } from '@/types/api';
+import type ZoomMtgEmbeddedDefault from '@zoom/meetingsdk/embedded';
 
 interface ZoomMeetingComponentProps {
   classId: string;
   session: ClassSchedule;
   userName: string;
+  /** Shown in the pre-join card when available. Purely presentational. */
+  instructorName?: string;
+  /** Shows an enrollment confirmation line in the pre-join card when true. */
+  isEnrolled?: boolean;
 }
 
-type JoinState = 'waiting' | 'loading' | 'ready' | 'error';
-type ErrorReason = 'too-early' | 'not-enrolled' | 'unauthenticated' | 'cancelled' | 'missing-meeting' | 'sdk-config' | 'signature-failed' | 'init-failed' | 'network' | 'meeting-ended';
+const statusLabel: Record<ClassSchedule['status'], string> = {
+  live: 'Live now', scheduled: 'Scheduled', completed: 'Completed', cancelled: 'Cancelled',
+};
 
-export default function ZoomMeetingComponent({ classId, session, userName }: ZoomMeetingComponentProps) {
+type EmbeddedZoomClient = ReturnType<typeof ZoomMtgEmbeddedDefault.createClient>;
+
+type JoinState = 'waiting' | 'loading' | 'ready' | 'error';
+type ErrorReason = 'too-early' | 'not-enrolled' | 'unauthenticated' | 'cancelled' | 'missing-meeting' | 'sdk-config' | 'init-failed' | 'network' | 'meeting-ended';
+
+export default function ZoomMeetingComponent({ classId, session, userName, instructorName, isEnrolled }: ZoomMeetingComponentProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const clientRef = useRef<EmbeddedZoomClient | null>(null);
+  const clientInitializedRef = useRef(false);
   const [state, setState] = useState<JoinState>('waiting');
   const [error, setError] = useState<ErrorReason | null>(null);
   const [countdown, setCountdown] = useState<string>('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Update countdown
   useEffect(() => {
@@ -53,16 +70,59 @@ export default function ZoomMeetingComponent({ classId, session, userName }: Zoo
     }
   }, [session.startTime, state]);
 
+  // Leave the meeting and free the SDK's media resources if the student navigates
+  // away (e.g. back to My Classes) while still connected.
+  useEffect(() => {
+    return () => {
+      if (clientRef.current && clientInitializedRef.current) {
+        clientRef.current.leaveMeeting().catch(() => {});
+      }
+    };
+  }, []);
+
+  // Component View sizes its video canvas to the pixel dimensions given at init.
+  // Keep it filling the wrapper (instead of Zoom's small default floating widget)
+  // by re-measuring whenever the wrapper resizes - including entering/exiting fullscreen.
+  useEffect(() => {
+    if (state !== 'ready' || !wrapperRef.current) return;
+    const wrapper = wrapperRef.current;
+    const resize = () => {
+      const rect = wrapper.getBoundingClientRect();
+      clientRef.current?.updateVideoOptions({
+        viewSizes: { default: { width: Math.round(rect.width), height: Math.round(rect.height) } },
+      });
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [state]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === wrapperRef.current);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = () => {
+    if (!wrapperRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      wrapperRef.current.requestFullscreen().catch(() => {});
+    }
+  };
+
   const handleJoinMeeting = async () => {
     setState('loading');
     setError(null);
 
     try {
-      // Request credentials from backend
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/classes/${classId}/sessions/${session.id}/join-credentials`,
-        {},
-        { headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` } }
+      // Request credentials from backend (apiClient attaches the auth token and
+      // retries once with a refreshed token on 401, same as every other API call).
+      const response = await apiClient.post(
+        `/classes/${classId}/sessions/${session.id}/join-credentials`,
+        {}
       );
 
       if (!response.data.success) {
@@ -86,50 +146,65 @@ export default function ZoomMeetingComponent({ classId, session, userName }: Zoo
 
       const { signature, meetingNumber, passWord, userName: displayName, userEmail } = response.data.data;
 
-      // Load the Zoom Meeting SDK on demand so it never bloats routes that don't join a meeting
-      const { ZoomMtg } = await import('@zoom/meetingsdk');
-      ZoomMtg.setZoomJSLib('https://source.zoom.us/2.13.0/zm.js', '/zmutil/');
-      ZoomMtg.preLoadWasm();
+      if (!containerRef.current || !wrapperRef.current) {
+        setError('init-failed');
+        setState('error');
+        return;
+      }
 
       try {
-        await ZoomMtg.init({
-          leaveUrl: `${window.location.origin}/my-classes`,
-          success: () => {
-            if (!containerRef.current) {
-              setError('init-failed');
-              setState('error');
-              return;
-            }
+        // Load the Zoom Meeting SDK's Component View on demand so it never bloats
+        // routes that don't join a meeting. Component View renders inside the
+        // container we give it, instead of Client View's full-page takeover.
+        const { default: ZoomMtgEmbedded } = await import('@zoom/meetingsdk/embedded');
 
-            ZoomMtg.join({
-              signature,
-              meetingNumber,
-              passWord,
-              userName: displayName || userName,
-              userEmail: userEmail || '',
-              success: () => {
-                setState('ready');
+        if (!clientRef.current) {
+          clientRef.current = ZoomMtgEmbedded.createClient();
+        }
+        const client = clientRef.current;
+
+        if (!clientInitializedRef.current) {
+          // Without an explicit size, Component View renders as a small draggable
+          // floating widget instead of filling the space we give it - size it to
+          // the wrapper up front (the ResizeObserver effect keeps it in sync after).
+          const rect = wrapperRef.current.getBoundingClientRect();
+          await client.init({
+            zoomAppRoot: containerRef.current,
+            language: 'en-US',
+            patchJsMedia: true,
+            customize: {
+              video: {
+                isResizable: false,
+                popper: { disableDraggable: true },
+                viewSizes: { default: { width: Math.round(rect.width), height: Math.round(rect.height) } },
               },
-              error: (error: any) => {
-                console.error('Zoom join error:', error);
-                if (error?.toString?.().includes('ended')) {
-                  setError('meeting-ended');
-                } else {
-                  setError('init-failed');
-                }
-                setState('error');
-              },
-            });
-          },
-          error: (error: any) => {
-            console.error('Zoom init error:', error);
-            setError('init-failed');
-            setState('error');
-          },
+            },
+          });
+          // Detect the host ending the meeting (or the connection closing) while
+          // already joined, so the UI can leave the embedded view instead of
+          // freezing on Zoom's own internal state.
+          client.on('connection-change', (payload: { state?: string }) => {
+            if (payload?.state === 'Closed') {
+              setError('meeting-ended');
+              setState('error');
+            }
+          });
+          clientInitializedRef.current = true;
+        }
+
+        await client.join({
+          signature,
+          meetingNumber,
+          password: passWord,
+          userName: displayName || userName,
+          userEmail: userEmail || '',
         });
-      } catch (initError) {
-        console.error('SDK initialization failed:', initError);
-        setError('init-failed');
+
+        setState('ready');
+      } catch (sdkError: any) {
+        console.error('Zoom SDK error:', sdkError?.type, sdkError?.reason, sdkError);
+        const reason = typeof sdkError?.reason === 'string' ? sdkError.reason : '';
+        setError(reason.toLowerCase().includes('ended') ? 'meeting-ended' : 'init-failed');
         setState('error');
       }
     } catch (err: any) {
@@ -165,63 +240,127 @@ export default function ZoomMeetingComponent({ classId, session, userName }: Zoo
     'cancelled': `This session has been ${session.status}. Unable to join.`,
     'missing-meeting': 'The instructor has not set up a meeting for this session yet.',
     'sdk-config': 'Zoom is not configured. Please contact support.',
-    'signature-failed': 'Failed to generate meeting credentials. Please try again.',
     'init-failed': 'Failed to initialize Zoom. Please check your connection and try again.',
     'network': 'Network error. Please check your connection and try again.',
     'meeting-ended': 'This meeting has ended.',
   };
 
   return (
-    <div className="space-y-4">
-      {state === 'waiting' && error === 'too-early' && (
-        <div className="bg-blue-50 border border-blue-200 rounded p-4 text-blue-800">
-          <p className="font-semibold mb-2">Session Not Yet Available</p>
-          <p className="text-sm mb-3">{errorMessages['too-early']}</p>
-          {countdown && <p className="text-sm font-medium text-blue-600">{countdown}</p>}
-        </div>
-      )}
+    <div className="space-y-3">
+      {/* A single self-contained "meeting room" card - dark themed like a real video
+          call lobby. The zoomAppRoot container is always mounted at real, non-zero
+          dimensions (a hidden/zero-size container makes Zoom's SDK fail with an opaque
+          init error); everything else here is an overlay on top of it until join()
+          succeeds, at which point the overlay is removed and the real video shows through. */}
+      <div
+        ref={wrapperRef}
+        role="region"
+        aria-label="Live classroom"
+        className={`relative w-full rounded-2xl overflow-hidden border border-gray-800 bg-gradient-to-b from-gray-900 to-black ${isFullscreen ? 'h-screen' : ''}`}
+        style={isFullscreen ? undefined : { minHeight: 480 }}
+      >
+        <div ref={containerRef} className="absolute inset-0" />
 
-      {state === 'waiting' && !error && (
-        <>
-          <p className="text-gray-600 mb-4">Click below to join the live meeting.</p>
+        {state === 'waiting' && error === 'too-early' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
+            <div className="w-16 h-16 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center mb-4 flex-shrink-0">
+              <Clock className="h-7 w-7 text-blue-300" />
+            </div>
+            <p className="text-white font-bold text-lg mb-1" role="status" aria-live="polite">{session.title}</p>
+            {instructorName && <p className="text-white/50 text-sm mb-1">with {instructorName}</p>}
+            <p className="text-white/60 text-sm max-w-sm mb-4">{errorMessages['too-early']}</p>
+            {countdown && <p className="text-2xl font-mono font-bold text-white" aria-hidden="true">{countdown}</p>}
+          </div>
+        )}
+
+        {state === 'waiting' && !error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
+            <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-4 flex-shrink-0">
+              <Video className="h-7 w-7 text-white" />
+            </div>
+            <p className="text-white font-bold text-lg mb-1">{session.title}</p>
+            {instructorName && <p className="text-white/50 text-sm mb-1">with {instructorName}</p>}
+            <p className="text-white/50 text-sm mb-2">{new Date(session.startTime).toLocaleString()}</p>
+            <span className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full bg-white/10 text-white/70 mb-4">
+              {statusLabel[session.status]}
+            </span>
+            {isEnrolled && (
+              <p className="flex items-center gap-1.5 text-xs text-emerald-400 mb-4">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> You&apos;re enrolled and ready to join
+              </p>
+            )}
+            <button
+              onClick={handleJoinMeeting}
+              className="inline-flex items-center gap-2 bg-[#889dd1] hover:bg-[#7086c4] text-white px-8 py-3 rounded-full font-semibold shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+            >
+              <Video className="h-4 w-4" aria-hidden="true" /> Join Class
+            </button>
+            {countdown && <p className="text-white/40 text-xs mt-3" aria-hidden="true">{countdown}</p>}
+            <div className="mt-5 max-w-xs space-y-1">
+              <p className="text-white/35 text-xs">Your browser may ask for camera and microphone access when you join.</p>
+              <p className="text-white/35 text-xs">Only enrolled students can join, and only during the scheduled session window.</p>
+            </div>
+          </div>
+        )}
+
+        {state === 'loading' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" role="status" aria-live="polite">
+            <div className="animate-spin motion-reduce:animate-none h-8 w-8 border-2 border-white/30 border-t-white rounded-full" aria-hidden="true" />
+            <span className="text-white/70 text-sm">Securely preparing your classroom&hellip;</span>
+          </div>
+        )}
+
+        {state === 'error' && error === 'meeting-ended' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" role="status" aria-live="polite">
+            <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-4">
+              <Video className="h-7 w-7 text-white/70" aria-hidden="true" />
+            </div>
+            <p className="text-white font-bold text-lg mb-1">Class Ended</p>
+            <p className="text-white/60 text-sm max-w-sm mb-5">{errorMessages['meeting-ended']}</p>
+            <Link
+              to={`/classroom/${classId}`}
+              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-6 py-2.5 rounded-full font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+            >
+              Return to Class
+            </Link>
+          </div>
+        )}
+
+        {state === 'error' && error && error !== 'meeting-ended' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" role="alert" aria-live="polite">
+            <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-400/30 flex items-center justify-center mb-4">
+              <AlertCircle className="h-7 w-7 text-red-300" aria-hidden="true" />
+            </div>
+            <p className="text-white font-bold text-lg mb-1">Unable to Join</p>
+            <p className="text-white/60 text-sm max-w-sm mb-4">{errorMessages[error]}</p>
+            <button
+              onClick={() => {
+                setState('waiting');
+                setError(null);
+              }}
+              className="text-sm font-medium text-white/80 underline hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 rounded"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+
+        {state === 'ready' && (
           <button
-            onClick={handleJoinMeeting}
-            className="inline-block bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800"
+            onClick={handleToggleFullscreen}
+            className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            title={isFullscreen ? 'Exit fullscreen' : 'Expand to fullscreen'}
           >
-            Join Class
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
-          {countdown && <p className="text-sm text-gray-500">{countdown}</p>}
-        </>
+        )}
+      </div>
+
+      {state === 'ready' && (
+        <p className="text-xs text-gray-500 text-center">
+          Meeting controls (mute, video, chat, leave) are available inside the meeting above.
+        </p>
       )}
-
-      {state === 'loading' && (
-        <div className="flex items-center gap-2">
-          <div className="animate-spin h-5 w-5 border-2 border-black border-t-transparent rounded-full" />
-          <span>Connecting to meeting...</span>
-        </div>
-      )}
-
-      {state === 'error' && error && (
-        <div className="bg-red-50 border border-red-200 rounded p-4 text-red-800">
-          <p className="font-semibold mb-2">Unable to Join</p>
-          <p className="text-sm mb-3">{errorMessages[error]}</p>
-          <button
-            onClick={() => {
-              setState('waiting');
-              setError(null);
-            }}
-            className="text-sm underline hover:no-underline font-medium"
-          >
-            Try Again
-          </button>
-        </div>
-      )}
-
-      {state === 'ready' && <div ref={containerRef} id="zmmtg-root" className="w-full h-96" />}
-
-      <p className="text-sm text-gray-600 mt-4">
-        Meeting controls (mute, video, chat) are available inside the meeting.
-      </p>
     </div>
   );
 }
