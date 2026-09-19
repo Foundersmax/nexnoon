@@ -13,7 +13,13 @@ interface RawBodyRequest extends Request {
 
 const router = Router();
 
-router.use(rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'zoom-webhook' }));
+// Zoom sends every webhook delivery (across every meeting/class on the account,
+// including retries and the periodic endpoint.url_validation re-check) from a
+// small set of shared Zoom infrastructure IPs, and this middleware keys by IP
+// when there's no authenticated user - so the ceiling must stay high enough that
+// normal multi-class traffic and Zoom's own retries are never mistaken for abuse.
+// This only guards against gross flooding, not normal volume.
+router.use(rateLimit({ windowMs: 60_000, max: 300, keyPrefix: 'zoom-webhook' }));
 
 router.post('/', async (req: RawBodyRequest, res) => {
   const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);

@@ -52,9 +52,17 @@ async function resolveInstructorZoomHost(instructorId: string): Promise<{ hostId
 
 /**
  * Rejects overlapping sessions for the same Nexnoon instructor or the same Zoom
- * host user - one shared Zoom host cannot reliably run two simultaneous meetings,
- * and an instructor cannot be in two places at once. Cancelled sessions and the
- * session being updated (when `excludeSessionId` is given) are excluded.
+ * host user - one Zoom host cannot reliably run two simultaneous meetings, and an
+ * instructor cannot be in two places at once. Cancelled sessions and the session
+ * being updated (when `excludeSessionId` is given) are excluded.
+ *
+ * "shared:me" (the documented fallback for instructors without an explicit Zoom
+ * user mapping) is treated exactly like any other host value here, not
+ * special-cased out of the check: the platform must never assume the shared
+ * Server-to-Server OAuth account can run two concurrent meetings, so two
+ * "shared:me" sessions that overlap are rejected the same as any other same-host
+ * conflict. Different instructors with different *explicit* Zoom host mappings
+ * are unaffected and may still run truly simultaneous meetings.
  */
 async function findSchedulingConflict(params: {
   instructorId: string;
@@ -75,13 +83,7 @@ async function findSchedulingConflict(params: {
 
   const [instructorConflict, hostConflict] = await Promise.all([
     ClassScheduleModel.findOne({ ...baseQuery, classId: { $in: candidateClassIds } }),
-    // "shared:me" is the documented fallback host and is intentionally excluded from
-    // host-level conflict checks - it's the same account nearly every legacy session
-    // uses, so treating it as a real single host would reject unrelated instructors'
-    // simultaneous classes.
-    zoomHostUserId === 'shared:me'
-      ? Promise.resolve(null)
-      : ClassScheduleModel.findOne({ ...baseQuery, zoomHostUserId }),
+    ClassScheduleModel.findOne({ ...baseQuery, zoomHostUserId }),
   ]);
 
   if (instructorConflict) return { reason: 'instructor' };
@@ -422,7 +424,9 @@ router.post('/', requireAuth, requireRole('instructor', 'admin'), rateLimit({ wi
             zoomLink: zoom.join_url,
             zoomMeetingId: zoom.id ? String(zoom.id) : undefined,
             zoomPasscode: zoom.password,
-            zoomStartUrl: zoom.start_url,
+            // zoomStartUrl is intentionally not persisted - see the deprecation note
+            // on the schema field. Host access is always fetched fresh on demand
+            // (POST /host-access), never read from a stored value.
             zoomHostUserId,
             meetingCreationStatus: zoom.id ? 'ready' : 'skipped',
           };
@@ -553,6 +557,13 @@ router.post(
   requireRole('instructor', 'admin'),
   rateLimit({ windowMs: 60_000, max: 10, keyPrefix: 'host-access' }),
   async (req: AuthRequest, res) => {
+    // A host start_url is a short-lived credential (Zoom expires it ~2 hours after
+    // the meeting was *created*, not from the class's scheduled time - see
+    // getZoomMeetingStartUrl), so this response must never be cached by a shared
+    // cache, browser back/forward cache, or proxy.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+
     if (!isValidObjectId(req.params.classId) || !isValidObjectId(req.params.sessionId)) {
       return res.status(400).json({ success: false, message: 'Invalid class or session ID' });
     }
@@ -566,19 +577,26 @@ router.post(
       return res.status(403).json({ success: false, message: 'You are not the assigned instructor for this class' });
     }
 
-    const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.classId }).select('+zoomStartUrl');
+    const session = await ClassScheduleModel.findOne({ _id: req.params.sessionId, classId: req.params.classId });
     if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
-    if (session.status === 'cancelled' || session.status === 'completed') {
+    if (session.status === 'cancelled' || session.status === 'completed' || session.status === 'ended') {
       return res.status(409).json({ success: false, message: `Session is ${session.status}` });
     }
     if (!session.zoomMeetingId) {
       return res.status(409).json({ success: false, message: 'Meeting not available for this session' });
     }
 
-    const startUrl = session.zoomStartUrl || (await getZoomMeetingStartUrl(session.zoomMeetingId));
+    // Deliberately ignores any previously-stored zoomStartUrl (deprecated, never
+    // trusted as authorization - see the model comment): a start_url generated at
+    // meeting-creation time is very likely expired by the time an instructor
+    // actually starts a class scheduled hours or days later. The only source of
+    // truth for host access is a fresh Retrieve-a-Meeting call made right now.
+    const startUrl = await getZoomMeetingStartUrl(session.zoomMeetingId);
     if (!startUrl) {
-      return res.status(503).json({ success: false, message: 'Unable to retrieve host start link right now' });
+      // Never surface the Zoom response body or any URL in the error - only a
+      // safe, generic message. getZoomMeetingStartUrl itself never logs the URL.
+      return res.status(503).json({ success: false, message: 'Unable to retrieve a fresh host start link right now. Please try again shortly.' });
     }
 
     return res.json({ success: true, data: { startUrl } });
@@ -756,7 +774,8 @@ router.post(
       session.zoomLink = zoom.join_url || undefined;
       session.zoomMeetingId = zoom.id ? String(zoom.id) : undefined;
       session.zoomPasscode = zoom.password;
-      session.zoomStartUrl = zoom.start_url;
+      // zoomStartUrl is intentionally not persisted here either - see the
+      // deprecation note on the schema field and the host-access route.
       session.meetingCreationStatus = zoom.id ? 'ready' : 'skipped';
       await session.save();
     } catch (error) {

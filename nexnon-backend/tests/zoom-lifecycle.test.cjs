@@ -66,7 +66,7 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     const text = await response.text();
     let json;
     try { json = JSON.parse(text); } catch { json = text; }
-    return { status: response.status, body: json };
+    return { status: response.status, body: json, headers: response.headers };
   };
   const signup = async (name, role) => {
     const result = await request('/v1/auth/signup', { method: 'POST', body: {
@@ -74,6 +74,14 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     } });
     assert.equal(result.status, 201);
     return result.body.data;
+  };
+  const createClass = async (token, title) => {
+    const created = await request('/v1/classes', { method: 'POST', token, body: {
+      title, description: 'Lifecycle test class', category: 'Testing', level: 'Beginner',
+      price: 0, duration: 60, totalSessions: 2, status: 'published',
+    } });
+    assert.equal(created.status, 201);
+    return created.body.data.id;
   };
 
   let instructorA, instructorB, student, classA, classB;
@@ -83,14 +91,6 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     instructorB = await signup('InstructorB', 'instructor');
     student = await signup('LifecycleStudent', 'student');
 
-    const createClass = async (token, title) => {
-      const created = await request('/v1/classes', { method: 'POST', token, body: {
-        title, description: 'Lifecycle test class', category: 'Testing', level: 'Beginner',
-        price: 0, duration: 60, totalSessions: 2, status: 'published',
-      } });
-      assert.equal(created.status, 201);
-      return created.body.data.id;
-    };
     classA = await createClass(instructorA.token, 'Lifecycle Class A');
     classB = await createClass(instructorB.token, 'Lifecycle Class B');
   });
@@ -106,7 +106,7 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     assert.equal(second.status, 201);
   });
 
-  await t.test('overlapping session for the same instructor is rejected with 409', async () => {
+  await t.test('same instructor, overlapping -> reject', async () => {
     const conflicting = await request(`/v1/classes/${classA}/schedule`, { method: 'POST', token: instructorA.token, body: {
       sessionNumber: 3, title: 'Overlap', startTime: '2027-02-01T10:30:00.000Z', endTime: '2027-02-01T11:30:00.000Z',
     } });
@@ -114,9 +114,58 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     assert.match(conflicting.body.message, /already have a session/i);
   });
 
-  await t.test('different instructor (different Zoom host mapping) may run a simultaneous session', async () => {
-    const simultaneous = await request(`/v1/classes/${classB}/schedule`, { method: 'POST', token: instructorB.token, body: {
+  await t.test('different instructors, shared fallback host, overlapping -> reject', async () => {
+    // Neither instructorA nor instructorB has an explicit Zoom user mapping, so
+    // both resolve to the shared "shared:me" fallback host - the platform must
+    // never assume that shared account can run two concurrent meetings, so this
+    // must be rejected exactly like a same-host conflict, even though the two
+    // sessions belong to different instructors and different classes.
+    const conflicting = await request(`/v1/classes/${classB}/schedule`, { method: 'POST', token: instructorB.token, body: {
       sessionNumber: 1, title: 'Class B Session 1', startTime: '2027-02-01T10:00:00.000Z', endTime: '2027-02-01T11:00:00.000Z',
+    } });
+    assert.equal(conflicting.status, 409);
+    assert.match(conflicting.body.message, /zoom host/i);
+  });
+
+  await t.test('different instructors, same explicit Zoom host mapping, overlapping -> reject', async () => {
+    const { User } = require('../dist/models/User');
+    const instructorC = await signup('InstructorC', 'instructor');
+    const instructorD = await signup('InstructorD', 'instructor');
+    await User.updateOne({ _id: instructorC.user.id }, { $set: { zoomHostEnabled: true, zoomUserId: 'shared-explicit-host@example.invalid' } });
+    await User.updateOne({ _id: instructorD.user.id }, { $set: { zoomHostEnabled: true, zoomUserId: 'shared-explicit-host@example.invalid' } });
+
+    const classC = await createClass(instructorC.token, 'Lifecycle Class C');
+    const classD = await createClass(instructorD.token, 'Lifecycle Class D');
+
+    const first = await request(`/v1/classes/${classC}/schedule`, { method: 'POST', token: instructorC.token, body: {
+      sessionNumber: 1, title: 'Class C Session 1', startTime: '2027-02-03T10:00:00.000Z', endTime: '2027-02-03T11:00:00.000Z',
+    } });
+    assert.equal(first.status, 201);
+
+    const conflicting = await request(`/v1/classes/${classD}/schedule`, { method: 'POST', token: instructorD.token, body: {
+      sessionNumber: 1, title: 'Class D Session 1', startTime: '2027-02-03T10:30:00.000Z', endTime: '2027-02-03T11:30:00.000Z',
+    } });
+    assert.equal(conflicting.status, 409);
+    assert.match(conflicting.body.message, /zoom host/i);
+  });
+
+  await t.test('different instructors, different explicit Zoom hosts, overlapping -> allow', async () => {
+    const { User } = require('../dist/models/User');
+    const instructorE = await signup('InstructorE', 'instructor');
+    const instructorF = await signup('InstructorF', 'instructor');
+    await User.updateOne({ _id: instructorE.user.id }, { $set: { zoomHostEnabled: true, zoomUserId: 'host-e@example.invalid' } });
+    await User.updateOne({ _id: instructorF.user.id }, { $set: { zoomHostEnabled: true, zoomUserId: 'host-f@example.invalid' } });
+
+    const classE = await createClass(instructorE.token, 'Lifecycle Class E');
+    const classF = await createClass(instructorF.token, 'Lifecycle Class F');
+
+    const first = await request(`/v1/classes/${classE}/schedule`, { method: 'POST', token: instructorE.token, body: {
+      sessionNumber: 1, title: 'Class E Session 1', startTime: '2027-02-04T10:00:00.000Z', endTime: '2027-02-04T11:00:00.000Z',
+    } });
+    assert.equal(first.status, 201);
+
+    const simultaneous = await request(`/v1/classes/${classF}/schedule`, { method: 'POST', token: instructorF.token, body: {
+      sessionNumber: 1, title: 'Class F Session 1', startTime: '2027-02-04T10:00:00.000Z', endTime: '2027-02-04T11:00:00.000Z',
     } });
     assert.equal(simultaneous.status, 201);
   });
@@ -163,7 +212,7 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
     }
   });
 
-  await t.test('host-access is instructor/admin-only and never leaks to students', async () => {
+  await t.test('host-access: student and non-owning instructor are forbidden', async () => {
     const { ClassScheduleModel } = require('../dist/models/Class');
     const anySession = await ClassScheduleModel.findOne({ classId: classA });
 
@@ -172,11 +221,116 @@ test('zoom lifecycle: scheduling conflicts, idempotent creation, host access, an
 
     const asOtherInstructor = await request(`/v1/classes/${classA}/sessions/${anySession.id}/host-access`, { method: 'POST', token: instructorB.token });
     assert.equal(asOtherInstructor.status, 403);
+  });
 
-    // Zoom is unconfigured in this test env, so no meeting/start_url exists yet -
-    // the route must fail safely (409 missing meeting), never fabricate a URL.
+  await t.test('host-access: missing meeting fails safely (409, no fabricated URL)', async () => {
+    const { ClassScheduleModel } = require('../dist/models/Class');
+    // Zoom is unconfigured in this test env, so this fixture session (created via
+    // the real route earlier) has no zoomMeetingId - the route must fail safely,
+    // never fabricate a URL.
+    const anySession = await ClassScheduleModel.findOne({ classId: classA, zoomMeetingId: { $exists: false } });
     const asOwner = await request(`/v1/classes/${classA}/sessions/${anySession.id}/host-access`, { method: 'POST', token: instructorA.token });
     assert.equal(asOwner.status, 409);
+  });
+
+  await t.test('host-access: cancelled, completed, and ended sessions are all rejected', async () => {
+    const { ClassScheduleModel } = require('../dist/models/Class');
+    let sessionNumber = 900;
+    for (const status of ['cancelled', 'completed', 'ended']) {
+      const session = await ClassScheduleModel.create({
+        classId: classA, sessionNumber: sessionNumber++, title: `Host access ${status} fixture`,
+        startTime: new Date('2027-04-01T10:00:00.000Z'), endTime: new Date('2027-04-01T11:00:00.000Z'),
+        zoomMeetingId: '11122233344', status,
+      });
+      const response = await request(`/v1/classes/${classA}/sessions/${session.id}/host-access`, { method: 'POST', token: instructorA.token });
+      assert.equal(response.status, 409, `expected 409 for a ${status} session`);
+    }
+  });
+
+  await t.test('host-access: assigned instructor gets a FRESH start_url, never a stale stored one, with no-store caching', async () => {
+    const { ClassScheduleModel } = require('../dist/models/Class');
+    const zoomUtils = require('../dist/utils/zoom');
+    const originalGetZoomMeetingStartUrl = zoomUtils.getZoomMeetingStartUrl;
+    const originalConsoleError = console.error;
+
+    const staleUrl = 'https://us02web.zoom.us/s/00000000000?zak=STALE_DO_NOT_USE_TOKEN';
+    const freshUrl = 'https://us02web.zoom.us/s/11111111111?zak=FRESH_TOKEN_FOR_THIS_REQUEST';
+    let fetchCalledWithMeetingId;
+
+    // A pre-correction deployment could have persisted a start_url at meeting
+    // creation time; simulate that by writing one directly, bypassing the app
+    // (which no longer writes this field). The route must never read or trust it.
+    const session = await ClassScheduleModel.create({
+      classId: classA, sessionNumber: 950, title: 'Host access freshness fixture',
+      startTime: new Date('2027-04-02T10:00:00.000Z'), endTime: new Date('2027-04-02T11:00:00.000Z'),
+      zoomMeetingId: '22233344455', status: 'scheduled', zoomStartUrl: staleUrl,
+    });
+
+    const loggedMessages = [];
+    console.error = (...args) => { loggedMessages.push(args.map(String).join(' ')); };
+    zoomUtils.getZoomMeetingStartUrl = async (meetingId) => {
+      fetchCalledWithMeetingId = meetingId;
+      return freshUrl;
+    };
+
+    let response;
+    try {
+      response = await request(`/v1/classes/${classA}/sessions/${session.id}/host-access`, { method: 'POST', token: instructorA.token });
+    } finally {
+      zoomUtils.getZoomMeetingStartUrl = originalGetZoomMeetingStartUrl;
+      console.error = originalConsoleError;
+    }
+
+    assert.equal(response.status, 200);
+    assert.equal(fetchCalledWithMeetingId, '22233344455', 'must call the fresh-fetch path for this exact meeting');
+    assert.equal(response.body.data.startUrl, freshUrl, 'must return the freshly-fetched URL');
+    assert.notEqual(response.body.data.startUrl, staleUrl, 'must never return the stale stored URL');
+    assert.ok(JSON.stringify(response.body).indexOf('STALE_DO_NOT_USE_TOKEN') === -1, 'stale token must not appear anywhere in the response');
+    assert.match(response.headers.get('cache-control') || '', /no-store/i);
+
+    const stillStale = await ClassScheduleModel.findById(session.id).select('+zoomStartUrl');
+    assert.equal(stillStale.zoomStartUrl, staleUrl, 'the app must not have re-persisted the fresh URL either');
+    assert.ok(!loggedMessages.some(line => line.includes(freshUrl) || line.includes('FRESH_TOKEN')), 'the fresh host URL must never be logged');
+  });
+
+  await t.test('host-access: Zoom failure returns a generic 503 with no URL or Zoom body leaked, and logs nothing sensitive', async () => {
+    const { ClassScheduleModel } = require('../dist/models/Class');
+    const zoomUtils = require('../dist/utils/zoom');
+    const originalGetZoomMeetingStartUrl = zoomUtils.getZoomMeetingStartUrl;
+    const originalConsoleError = console.error;
+
+    const session = await ClassScheduleModel.create({
+      classId: classA, sessionNumber: 951, title: 'Host access failure fixture',
+      startTime: new Date('2027-04-03T10:00:00.000Z'), endTime: new Date('2027-04-03T11:00:00.000Z'),
+      zoomMeetingId: '33344455566', status: 'scheduled',
+    });
+
+    const loggedMessages = [];
+    console.error = (...args) => { loggedMessages.push(args.map(String).join(' ')); };
+    zoomUtils.getZoomMeetingStartUrl = async () => null; // simulates a Zoom API failure
+
+    let response;
+    try {
+      response = await request(`/v1/classes/${classA}/sessions/${session.id}/host-access`, { method: 'POST', token: instructorA.token });
+    } finally {
+      zoomUtils.getZoomMeetingStartUrl = originalGetZoomMeetingStartUrl;
+      console.error = originalConsoleError;
+    }
+
+    assert.equal(response.status, 503);
+    const serialized = JSON.stringify(response.body);
+    assert.ok(!/zoom\.us|zak=|start_url/i.test(serialized), 'error response must not contain a Zoom URL or leaked field name');
+    assert.ok(!loggedMessages.some(line => /zoom\.us|zak=/i.test(line)), 'nothing sensitive should have been logged for this simulated failure');
+  });
+
+  await t.test('host-access: normal class/schedule responses exclude host access', async () => {
+    const classDetail = await request(`/v1/classes/${classA}`);
+    assert.equal(classDetail.status, 200);
+    for (const session of classDetail.body.data.schedule) {
+      for (const key of ['zoomStartUrl', 'zoomHostUserId', 'meetingCreationStatus']) {
+        assert.equal(session[key], undefined, `class detail response must not include ${key}`);
+      }
+    }
   });
 
   await t.test('webhook: endpoint URL validation challenge', async () => {

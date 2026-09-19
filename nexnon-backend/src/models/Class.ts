@@ -10,7 +10,18 @@ export interface IClassSchedule extends Document {
   zoomLink?: string;
   zoomMeetingId?: string;
   zoomPasscode?: string;
-  /** Native Zoom host start URL. Never exposed in ordinary API responses or logs. */
+  /**
+   * @deprecated No longer written. A Zoom start_url is a sensitive host credential
+   * (it embeds an authorization token) that Zoom expires ~2 hours after the
+   * meeting was *created* - not from the class's scheduled time - so a value
+   * stored here at creation time cannot be trusted as valid host authorization by
+   * the time an instructor actually starts the class. The host-access route
+   * (POST /classes/:classId/sessions/:sessionId/host-access) always fetches a
+   * fresh one via Zoom's Retrieve-a-Meeting API instead. This field is kept only
+   * so any value written by a pre-correction deployment doesn't break reads of
+   * older documents; it is never read as a source of truth. `select: false` keeps
+   * it out of ordinary queries as defense in depth.
+   */
   zoomStartUrl?: string;
   /** Zoom user (company account) this meeting was created under - used for host-conflict checks. */
   zoomHostUserId?: string;

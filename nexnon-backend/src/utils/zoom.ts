@@ -135,10 +135,23 @@ export const updateZoomMeeting = async (
 };
 
 /**
- * Fetches a fresh start_url for an existing meeting (Zoom start URLs embed a
- * short-lived token). Used only by the protected instructor host-access route;
- * never logged, never returned from any other endpoint. Returns null in demo mode
- * or on any Zoom API failure so callers can fail safely.
+ * Fetches a FRESH start_url for an existing meeting via Zoom's official
+ * Retrieve-a-Meeting endpoint (GET /meetings/{meetingId}). This is the safest
+ * (and only) supported Zoom API flow for this Server-to-Server OAuth integration
+ * to obtain current host authorization - there is no separate ZAK/OBF token
+ * lookup here, and none should be added, per Zoom's own guidance.
+ *
+ * Per Zoom's documented behavior, a start_url embeds a host-authorization token
+ * (functionally the same sensitive credential class as a ZAK) that expires
+ * roughly 2 hours after the *meeting was created* - not from its scheduled start
+ * time - so a value captured at creation time cannot be trusted hours or days
+ * later. Each call to this endpoint returns a newly-valid start_url, which is why
+ * the host-access route calls this on every request instead of ever reading a
+ * previously stored value.
+ *
+ * Never logs the response body or the URL itself. Returns null in demo mode or on
+ * any Zoom API failure so callers can fail safely (a generic 503, never the raw
+ * Zoom error) - callers should log only `error` here, never the return value.
  */
 export const getZoomMeetingStartUrl = async (meetingId: string): Promise<string | null> => {
   const accessToken = await getZoomAccessToken();
@@ -150,7 +163,13 @@ export const getZoomMeetingStartUrl = async (meetingId: string): Promise<string 
       { headers: { Authorization: `Bearer ${accessToken}` }, timeout: REQUEST_TIMEOUT_MS }
     );
     return response.data.start_url || null;
-  } catch {
+  } catch (error) {
+    // Safe operational log only - never the Zoom response body (which could
+    // itself echo back sensitive request/response details).
+    console.error(
+      `Zoom Retrieve-a-Meeting call failed while refreshing host start_url for meeting ${meetingId}:`,
+      error instanceof Error ? error.message : 'unknown error'
+    );
     return null;
   }
 };
