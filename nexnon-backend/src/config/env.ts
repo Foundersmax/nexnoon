@@ -20,6 +20,7 @@ export const ENV = {
 
   // Email (Nodemailer)
   EMAIL_FROM: process.env.EMAIL_FROM || 'no-reply@nexnon.com',
+  CONTACT_EMAIL: process.env.CONTACT_EMAIL || 'support@nexnoon.com',
   SMTP_HOST: process.env.SMTP_HOST || '',
   SMTP_PORT: Number(process.env.SMTP_PORT) || 587,
   SMTP_USER: process.env.SMTP_USER || '',
@@ -36,6 +37,13 @@ export const ENV = {
   // Zoom Meeting SDK (optional - for embedded student joining)
   ZOOM_MEETING_SDK_CLIENT_ID: process.env.ZOOM_MEETING_SDK_CLIENT_ID || '',
   ZOOM_MEETING_SDK_CLIENT_SECRET: process.env.ZOOM_MEETING_SDK_CLIENT_SECRET || '',
+
+  // Zoom webhook signature verification (optional - webhook route fails closed without it)
+  ZOOM_WEBHOOK_SECRET_TOKEN: process.env.ZOOM_WEBHOOK_SECRET_TOKEN || '',
+
+  // Live class join-window policy (see src/config/liveClassPolicy.ts)
+  LIVE_CLASS_JOIN_EARLY_MINUTES: Number(process.env.LIVE_CLASS_JOIN_EARLY_MINUTES) || 15,
+  LIVE_CLASS_LATE_JOIN_GRACE_MINUTES: Number(process.env.LIVE_CLASS_LATE_JOIN_GRACE_MINUTES) || 30,
 };
 
 

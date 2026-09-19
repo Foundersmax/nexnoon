@@ -10,7 +10,13 @@ export interface IClassSchedule extends Document {
   zoomLink?: string;
   zoomMeetingId?: string;
   zoomPasscode?: string;
-  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
+  /** Native Zoom host start URL. Never exposed in ordinary API responses or logs. */
+  zoomStartUrl?: string;
+  /** Zoom user (company account) this meeting was created under - used for host-conflict checks. */
+  zoomHostUserId?: string;
+  /** Tracks the Zoom meeting-creation call itself, independent of session lifecycle below. */
+  meetingCreationStatus: 'pending' | 'creating' | 'ready' | 'failed' | 'skipped';
+  status: 'scheduled' | 'live' | 'ended' | 'completed' | 'cancelled';
   recordingUrl?: string;
 }
 
@@ -103,15 +109,27 @@ const ClassScheduleSchema = new Schema<IClassSchedule>(
     zoomLink: { type: String },
     zoomMeetingId: { type: String },
     zoomPasscode: { type: String },
+    zoomStartUrl: { type: String, select: false },
+    zoomHostUserId: { type: String },
+    meetingCreationStatus: {
+      type: String,
+      enum: ['pending', 'creating', 'ready', 'failed', 'skipped'],
+      default: 'pending',
+    },
     status: {
       type: String,
-      enum: ['scheduled', 'live', 'completed', 'cancelled'],
+      enum: ['scheduled', 'live', 'ended', 'completed', 'cancelled'],
       default: 'scheduled',
     },
     recordingUrl: { type: String },
   },
   { timestamps: true }
 );
+
+// Atomic double-submit guard: the same (class, session number) can only exist once,
+// so a resubmitted "add session" request cannot create a second Zoom meeting for it
+// (see the idempotent claim/create/finalize flow in class.routes.ts).
+ClassScheduleSchema.index({ classId: 1, sessionNumber: 1 }, { unique: true });
 
 export const ClassModel = mongoose.model<IClass>('Class', ClassSchema);
 export const ClassScheduleModel = mongoose.model<IClassSchedule>(

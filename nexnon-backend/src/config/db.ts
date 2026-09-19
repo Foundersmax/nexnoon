@@ -9,6 +9,10 @@ export const connectDB = async () => {
       setServers(servers);
     }
     await mongoose.connect(ENV.MONGODB_URI, { serverSelectionTimeoutMS: 15000, connectTimeoutMS: 10000 });
+    // Build/sync indexes (e.g. the webhook-event and schedule uniqueness guards)
+    // before serving traffic, so the very first request after a fresh deploy can't
+    // race an in-progress index build and slip past a uniqueness constraint.
+    await mongoose.connection.syncIndexes();
     console.log("✅ MongoDB connected successfully");
     console.log(
       `   Database: ${ENV.MONGODB_URI.split("/").pop()?.split("?")[0]}`,

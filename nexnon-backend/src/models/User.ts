@@ -14,6 +14,10 @@ export interface IUser extends Document {
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
   emailVerificationToken?: string;
+  /** Zoom user (on the company Zoom account) this instructor's meetings are hosted under. */
+  zoomUserId?: string;
+  zoomEmail?: string;
+  zoomHostEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +35,9 @@ const UserSchema = new Schema<IUser>(
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
     emailVerificationToken: { type: String },
+    zoomUserId: { type: String },
+    zoomEmail: { type: String },
+    zoomHostEnabled: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

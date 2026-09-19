@@ -11,6 +11,8 @@ import enrollmentRoutes from './routes/enrollment.routes';
 import notificationRoutes from './routes/notification.routes';
 import reviewRoutes from './routes/review.routes';
 import dataRoutes from './routes/data.routes';
+import contactRoutes from './routes/contact.routes';
+import zoomWebhookRoutes from './routes/zoom-webhook.routes';
 import mongoose from 'mongoose';
 
 const app = express();
@@ -24,7 +26,17 @@ app.use(
   })
 );
 app.use(helmet());
-app.use(express.json({ limit: '5mb' }));
+// Captures the exact bytes Zoom signed, alongside normal JSON parsing, so the
+// webhook route can verify its HMAC signature without a second body-parsing pass
+// (which would otherwise break JSON parsing for every other route).
+app.use(
+  express.json({
+    limit: '5mb',
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+    },
+  })
+);
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
 // Health check (no /v1 prefix for load balancers)
@@ -40,6 +52,8 @@ app.use('/v1/enrollments', enrollmentRoutes);
 app.use('/v1/notifications', notificationRoutes);
 app.use('/v1/reviews', reviewRoutes);
 app.use('/v1/data', dataRoutes);
+app.use('/v1/contact', contactRoutes);
+app.use('/v1/zoom/webhook', zoomWebhookRoutes);
 
 app.use(errorHandler);
 

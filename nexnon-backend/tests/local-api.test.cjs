@@ -18,6 +18,7 @@ const app = require('../dist/app').default;
 
 test('local instructor and student workflows use persisted backend data', async t => {
   await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+  await mongoose.connection.syncIndexes();
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;

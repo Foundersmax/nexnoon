@@ -13,18 +13,16 @@ interface ZoomMeetingComponentProps {
   instructorName?: string;
   /** Shows an enrollment confirmation line in the pre-join card when true. */
   isEnrolled?: boolean;
+  /** Class thumbnail shown behind the pre-join/waiting card. Purely presentational. */
+  thumbnail?: string;
 }
-
-const statusLabel: Record<ClassSchedule['status'], string> = {
-  live: 'Live now', scheduled: 'Scheduled', completed: 'Completed', cancelled: 'Cancelled',
-};
 
 type EmbeddedZoomClient = ReturnType<typeof ZoomMtgEmbeddedDefault.createClient>;
 
 type JoinState = 'waiting' | 'loading' | 'ready' | 'error';
-type ErrorReason = 'too-early' | 'not-enrolled' | 'unauthenticated' | 'cancelled' | 'missing-meeting' | 'sdk-config' | 'init-failed' | 'network' | 'meeting-ended';
+type ErrorReason = 'too-early' | 'not-enrolled' | 'unauthenticated' | 'cancelled' | 'missing-meeting' | 'sdk-config' | 'init-failed' | 'network' | 'meeting-ended' | 'meeting-locked';
 
-export default function ZoomMeetingComponent({ classId, session, userName, instructorName, isEnrolled }: ZoomMeetingComponentProps) {
+export default function ZoomMeetingComponent({ classId, session, userName, instructorName, isEnrolled, thumbnail }: ZoomMeetingComponentProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<EmbeddedZoomClient | null>(null);
@@ -131,7 +129,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
           setError('too-early');
         } else if (message.includes('not enrolled')) {
           setError('not-enrolled');
-        } else if (message.includes('cancelled') || message.includes('completed')) {
+        } else if (message.includes('cancelled') || message.includes('completed') || message.includes('already ended') || message.includes('join window')) {
           setError('cancelled');
         } else if (message.includes('not available')) {
           setError('missing-meeting');
@@ -144,7 +142,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         return;
       }
 
-      const { signature, meetingNumber, passWord, userName: displayName, userEmail, zak } = response.data.data;
+      const { signature, meetingNumber, passWord, userName: displayName, userEmail } = response.data.data;
 
       if (!containerRef.current || !wrapperRef.current) {
         setError('init-failed');
@@ -198,7 +196,6 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
           password: passWord,
           userName: displayName || userName,
           userEmail: userEmail || '',
-          ...(zak ? { zak } : {}),
         });
 
         setState('ready');
@@ -209,6 +206,8 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
           setError('meeting-ended');
         } else if (reason.includes('not started')) {
           setError('too-early');
+        } else if (reason.includes('locked')) {
+          setError('meeting-locked');
         } else {
           setError('init-failed');
         }
@@ -222,7 +221,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
         const message = err.response.data?.message || '';
         if (message.includes('not started')) {
           setError('too-early');
-        } else if (message.includes('cancelled') || message.includes('completed')) {
+        } else if (message.includes('cancelled') || message.includes('completed') || message.includes('already ended') || message.includes('join window')) {
           setError('cancelled');
         } else {
           setError('missing-meeting');
@@ -250,6 +249,7 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
     'init-failed': 'Failed to initialize Zoom. Please check your connection and try again.',
     'network': 'Network error. Please check your connection and try again.',
     'meeting-ended': 'This meeting has ended.',
+    'meeting-locked': 'The host has locked this meeting. Please contact your instructor.',
   };
 
   return (
@@ -272,28 +272,30 @@ export default function ZoomMeetingComponent({ classId, session, userName, instr
           // Opaque background: the SDK can leave a partial "waiting" panel of its own
           // mounted in the zoomAppRoot container beneath this; without an opaque fill
           // here, that stray SDK content shows through around our centered message.
-          <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
-            <div className="w-16 h-16 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center mb-4 flex-shrink-0">
-              <Clock className="h-7 w-7 text-blue-300" />
+          // Title/instructor/date are intentionally omitted here - the LiveClassHeader
+          // right above this card already shows them; this card only adds what's new.
+          <div className="absolute inset-0 z-10 overflow-hidden">
+            {thumbnail && (
+              <img src={thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover opacity-25" />
+            )}
+            <div className="absolute inset-0 bg-gray-900/85" />
+            <div className="relative h-full flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
+              <div className="w-16 h-16 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center mb-4 flex-shrink-0">
+                <Clock className="h-7 w-7 text-blue-300" />
+              </div>
+              {countdown && <p className="text-3xl font-mono font-bold text-white mb-2" role="status" aria-live="polite">{countdown}</p>}
+              <p className="text-white/60 text-sm max-w-sm">You can join 15 minutes before this session starts.</p>
             </div>
-            <p className="text-white font-bold text-lg mb-1" role="status" aria-live="polite">{session.title}</p>
-            {instructorName && <p className="text-white/50 text-sm mb-1">with {instructorName}</p>}
-            <p className="text-white/60 text-sm max-w-sm mb-4">{errorMessages['too-early']}</p>
-            {countdown && <p className="text-2xl font-mono font-bold text-white" aria-hidden="true">{countdown}</p>}
           </div>
         )}
 
         {state === 'waiting' && !error && (
+          // Title/instructor/date/status are intentionally omitted here - the
+          // LiveClassHeader right above this card already shows them.
           <div className="absolute inset-0 z-10 bg-gray-900 flex flex-col items-center justify-center text-center px-6 overflow-y-auto py-8">
             <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center mb-4 flex-shrink-0">
               <Video className="h-7 w-7 text-white" />
             </div>
-            <p className="text-white font-bold text-lg mb-1">{session.title}</p>
-            {instructorName && <p className="text-white/50 text-sm mb-1">with {instructorName}</p>}
-            <p className="text-white/50 text-sm mb-2">{new Date(session.startTime).toLocaleString()}</p>
-            <span className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full bg-white/10 text-white/70 mb-4">
-              {statusLabel[session.status]}
-            </span>
             {isEnrolled && (
               <p className="flex items-center gap-1.5 text-xs text-emerald-400 mb-4">
                 <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> You&apos;re enrolled and ready to join
